@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packet Probe</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f5f6f8; --border: #d9dce1; --text: #1d2025; --muted: #6b7280;
+    --accent: #2563eb; --tx: #b45309; --rx: #047857; --err: #dc2626; --sel: #dbeafe;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171b; --panel: #1d2026; --border: #2e323a; --text: #e6e8eb; --muted: #9aa1ab;
+      --accent: #60a5fa; --tx: #fbbf24; --rx: #34d399; --err: #f87171; --sel: #1e3a5f;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif;
+         display: flex; flex-direction: column; }
+  header, .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+                 padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 14px; margin: 0 8px 0 0; }
+  label { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+  input, select, button { font: inherit; color: var(--text); background: var(--bg);
+                          border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; }
+  input.port { width: 6em; }
+  input.host { width: 9em; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); display: inline-block; }
+  .dot.on { background: var(--rx); }
+  #state { color: var(--muted); }
+  #message { color: var(--muted); margin-left: auto; }
+  #message.error { color: var(--err); }
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #table-wrap { flex: 1; min-height: 120px; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; font: 12px/1.5 ui-monospace, monospace; }
+  th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600;
+       border-bottom: 1px solid var(--border); }
+  th, td { padding: 2px 8px; white-space: nowrap; }
+  td.summary { white-space: normal; width: 100%; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--panel); }
+  tbody tr.selected { background: var(--sel); }
+  .tx { color: var(--tx); } .rx { color: var(--rx); } .error { color: var(--err); }
+  #detail { height: 30%; min-height: 100px; display: flex; border-top: 1px solid var(--border); }
+  #detail pre { flex: 1; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.5 ui-monospace, monospace; }
+  #detail pre + pre { border-left: 1px solid var(--border); }
+  .bar.send { border-top: 1px solid var(--border); border-bottom: 0; }
+  #send-input { flex: 1; min-width: 12em; font-family: ui-monospace, monospace; }
+  @media (max-width: 640px) {
+    #detail { flex-direction: column; height: 40%; }
+    #detail pre + pre { border-left: 0; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Packet Probe</h1>
+  <span class="dot" id="engine-dot" title="engine link"></span>
+  <span id="state">disconnected</span>
+  <label>Mode
+    <select id="mode">
+      <option value="udp">UDP</option>
+      <option value="tcp-client">TCP Client</option>
+      <option value="tcp-server">TCP Server</option>
+      <option value="tcp-proxy">TCP Proxy</option>
+      <option value="serial">Serial</option>
+    </select>
+  </label>
+  <span id="fields"></span>
+  <label>Decoder
+    <select id="decoder">
+      <option value="raw">raw</option>
+      <option value="fixed">fixed</option>
+      <option value="delimiter">delimiter</option>
+      <option value="length-prefix">length-prefix</option>
+    </select>
+  </label>
+  <span id="decoder-fields"></span>
+  <button class="primary" id="start">Start</button>
+  <button id="stop" disabled>Stop</button>
+  <span id="message"></span>
+</header>
+<div class="bar">
+  <label>Filter <input id="filter" placeholder="summary / hex"></label>
+  <label>Direction
+    <select id="dir-filter"><option value="">all</option><option value="tx">TX</option><option value="rx">RX</option></select>
+  </label>
+  <button id="clear">Clear</button>
+  <span id="count" style="color:var(--muted)"></span>
+</div>
+<main>
+  <div id="table-wrap">
+    <table>
+      <thead><tr><th>Seq</th><th>Time</th><th>Dir</th><th>Type</th><th>Size</th><th>Summary</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div id="detail"><pre id="hex"></pre><pre id="json"></pre></div>
+</main>
+<div class="bar send">
+  <select id="send-format"><option value="text">Text</option><option value="hex">Hex</option></select>
+  <input id="send-input" placeholder="payload">
+  <button id="send" disabled>Send</button>
+</div>
+<datalist id="serial-ports"></datalist>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+// ponytail: plain DOM table capped at MAX_ROWS; switch to a virtual list if bigger live views are needed.
+const MAX_ROWS = 5000;
+
+const MODE_FIELDS = {
+  "udp":        [["bind_host", "Bind", "0.0.0.0"], ["bind_port", "Port", "19000"],
+                 ["target_host", "Target", "127.0.0.1"], ["target_port", "Port", "19085"]],
+  "tcp-client": [["host", "Host", "127.0.0.1"], ["port", "Port", "19085"]],
+  "tcp-server": [["listen_host", "Listen", "0.0.0.0"], ["listen_port", "Port", "19085"]],
+  "tcp-proxy":  [["listen_host", "Listen", "127.0.0.1"], ["listen_port", "Port", "19000"],
+                 ["target_host", "Target", "127.0.0.1"], ["target_port", "Port", "19085"]],
+  "serial":     [["serial_port", "Port", "/dev/ttyUSB0"], ["baudrate", "Baud", "115200"]],
+};
+const DECODER_FIELDS = {
+  "raw": [],
+  "fixed": [["frame_size", "Size", "16"]],
+  "delimiter": [["delimiter_hex", "Delim hex", "0A"]],
+  "length-prefix": [["length_size", "Len bytes", "2"], ["length_endian", "Endian", "big"]],
+};
+const NUMERIC = new Set(["bind_port", "target_port", "port", "listen_port", "baudrate", "frame_size", "length_size"]);
+
+// Per-browser form memory only; the engine's own state comes from get_status.
+const saved = (() => { try { return JSON.parse(localStorage.getItem("pp-form") || "{}"); } catch { return {}; } })();
+function remember() {
+  const form = { mode: $("mode").value, decoder: $("decoder").value };
+  document.querySelectorAll("[data-key]").forEach((el) => { form[el.dataset.key] = el.value; });
+  try { localStorage.setItem("pp-form", JSON.stringify({ ...saved, ...form })); Object.assign(saved, form); } catch {}
+}
+
+function renderFields(container, specs) {
+  container.replaceChildren(...specs.map(([key, label, def]) => {
+    const wrap = document.createElement("label");
+    const input = document.createElement("input");
+    input.dataset.key = key;
+    input.value = saved[key] ?? def;
+    input.className = /port|size|baud/.test(key) ? "port" : "host";
+    if (key === "serial_port") input.setAttribute("list", "serial-ports");
+    input.addEventListener("change", remember);
+    wrap.append(label, input);
+    return wrap;
+  }));
+}
+function readFields(container) {
+  const out = {};
+  container.querySelectorAll("[data-key]").forEach((el) => {
+    out[el.dataset.key] = NUMERIC.has(el.dataset.key) ? Number(el.value) : el.value.trim();
+  });
+  return out;
+}
+
+$("mode").value = saved.mode || "udp";
+$("decoder").value = saved.decoder || "raw";
+const syncMode = () => {
+  renderFields($("fields"), MODE_FIELDS[$("mode").value]);
+  if ($("mode").value === "serial") command({ command: "list_serial_ports" }).then((r) => {
+    $("serial-ports").replaceChildren(...(r.ports || []).map((p) => Object.assign(document.createElement("option"), { value: p })));
+  });
+};
+const syncDecoder = () => renderFields($("decoder-fields"), DECODER_FIELDS[$("decoder").value]);
+$("mode").addEventListener("change", () => { syncMode(); remember(); });
+$("decoder").addEventListener("change", () => { syncDecoder(); remember(); });
+syncMode(); syncDecoder();
+
+function setMessage(text, isError = false) {
+  $("message").textContent = text;
+  $("message").classList.toggle("error", isError);
+}
+
+async function command(cmd) {
+  try {
+    const res = await fetch("/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Token": token },
+      body: JSON.stringify(cmd),
+    });
+    if (!res.ok) return { ok: false, error: `gateway HTTP ${res.status}` };
+    return await res.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+let engineState = "idle";
+let engineMode = "";
+function applyState(state, mode) {
+  engineState = state;
+  if (mode) engineMode = mode;
+  const capturing = state === "capturing";
+  $("state").textContent = capturing ? `capturing (${engineMode})` : state;
+  $("start").disabled = capturing;
+  $("stop").disabled = !capturing;
+  $("send").disabled = !capturing || engineMode === "tcp-proxy";
+}
+
+$("start").addEventListener("click", async () => {
+  remember();
+  const config = { mode: $("mode").value, ...readFields($("fields")),
+                   decoder: { decoder: $("decoder").value, ...readFields($("decoder-fields")) } };
+  let r = await command({ command: "configure", config });
+  if (r.ok) r = await command({ command: "start_capture" });
+  setMessage(r.ok ? "capture started" : r.error, !r.ok);
+});
+$("stop").addEventListener("click", async () => {
+  const r = await command({ command: "stop_capture" });
+  setMessage(r.ok ? "capture stopped" : r.error, !r.ok);
+});
+
+function toHex(text) {
+  return Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+$("send").addEventListener("click", async () => {
+  const raw = $("send-input").value;
+  let hex = $("send-format").value === "hex" ? raw.replace(/0x|[\s,:-]/gi, "") : toHex(raw);
+  if (!hex || !/^([0-9a-f]{2})+$/i.test(hex)) { setMessage("payload must be whole hex bytes", true); return; }
+  const r = await command({ command: "send", payload_hex: hex.toUpperCase() });
+  setMessage(r.ok ? `sent ${hex.length / 2} bytes` : r.error, !r.ok);
+});
+$("send-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("send").click(); });
+
+// ---- event table ----
+const rows = $("rows");
+const events = [];
+let selected = null;
+
+function dirClass(d) { return d === "app_to_device" || d === "tx" ? "tx" : "rx"; }
+function dirLabel(d) { return dirClass(d) === "tx" ? "TX" : "RX"; }
+function formatTime(ns) {
+  if (!ns) return "";
+  const d = new Date(ns / 1e6);
+  const micros = String(Math.floor((ns / 1e3) % 1e6)).padStart(6, "0");
+  return d.toTimeString().slice(0, 8) + "." + micros;
+}
+function matches(ev) {
+  const dir = $("dir-filter").value;
+  if (dir && dirClass(ev.direction) !== dir) return false;
+  const q = $("filter").value.trim().toLowerCase();
+  return !q || (ev.summary || "").toLowerCase().includes(q) || (ev.payload_hex || "").toLowerCase().includes(q.replace(/\s/g, ""));
+}
+function updateCount() { $("count").textContent = `${events.length} events`; }
+
+function addEvent(ev) {
+  const tr = document.createElement("tr");
+  const cells = [ev.seq, formatTime(ev.time_ns), dirLabel(ev.direction), ev.type, ev.size, ev.summary];
+  tr.replaceChildren(...cells.map((v, i) => {
+    const td = document.createElement("td");
+    td.textContent = v ?? "";
+    if (i === 2) td.className = dirClass(ev.direction);
+    if (i === 5) td.className = "summary";
+    return td;
+  }));
+  if (ev.type === "error") tr.classList.add("error");
+  tr.hidden = !matches(ev);
+  tr._event = ev;
+  const pinned = tableWrap.scrollTop + tableWrap.clientHeight >= tableWrap.scrollHeight - 4;
+  rows.append(tr);
+  events.push(ev);
+  if (events.length > MAX_ROWS) { events.shift(); rows.firstChild.remove(); }
+  if (pinned) tableWrap.scrollTop = tableWrap.scrollHeight;
+}
+const tableWrap = $("table-wrap");
+
+function hexDump(hex) {
+  const bytes = hex.match(/../g) || [];
+  const lines = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const ascii = chunk.map((b) => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : "."; }).join("");
+    lines.push(i.toString(16).padStart(8, "0") + "  " + chunk.join(" ").padEnd(47) + "  " + ascii);
+  }
+  return lines.join("\n");
+}
+rows.addEventListener("click", (e) => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  selected?.classList.remove("selected");
+  selected = tr;
+  tr.classList.add("selected");
+  $("hex").textContent = hexDump(tr._event.payload_hex || "");
+  $("json").textContent = JSON.stringify(tr._event, null, 2);
+});
+const refilter = () => { for (const tr of rows.children) tr.hidden = !matches(tr._event); };
+$("filter").addEventListener("input", refilter);
+$("dir-filter").addEventListener("change", refilter);
+$("clear").addEventListener("click", () => {
+  rows.replaceChildren(); events.length = 0; selected = null;
+  $("hex").textContent = $("json").textContent = ""; updateCount();
+});
+
+// ---- live stream ----
+function syncStatus() {
+  command({ command: "get_status" }).then((r) => { if (r.ok) applyState(r.engine_state, r.config?.mode); });
+}
+const stream = new EventSource("/events?token=" + encodeURIComponent(token));
+stream.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "gateway") {
+    $("engine-dot").classList.toggle("on", msg.engine_connected);
+    if (msg.engine_connected) syncStatus(); else applyState("disconnected");
+  } else if (msg.type === "status") {
+    applyState(msg.engine_state, msg.config?.mode);
+  } else if (msg.type !== "metadata") {
+    addEvent(msg);
+    updateCount();
+  }
+};
+stream.onerror = () => {
+  $("engine-dot").classList.remove("on");
+  setMessage(token ? "gateway connection lost, retrying..." : "missing ?token= in URL", true);
+};
+applyState("disconnected");
+</script>
+</body>
+</html>

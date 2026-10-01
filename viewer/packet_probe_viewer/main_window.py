@@ -20,44 +20,12 @@ from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
 from .ipc_path import make_default_ipc_path, resolve_initial_socket_path
 from .capture_process import CaptureProcess
-from .capture_command import build_capture_config, build_decoder_config, engine_mode_for_ui, supports_send
+from .capture_command import (
+    build_capture_config, build_decoder_config, engine_mode_for_ui, find_packet_probe_binary, supports_send,
+)
 from .styles import DARK_THEME_QSS
 from .viewer_settings import ViewerState, ViewerSettingsManager
 from .ipc_connector import IpcConnector
-
-
-def find_packet_probe_binary() -> str:
-    # 1. Check environment variable
-    env_path = os.environ.get("PACKET_PROBE_CLI")
-    if env_path:
-        return env_path
-
-    # 2. Check workspace build directory relative to this file
-    try:
-        current_dir = Path(__file__).resolve().parent
-        workspace_root = current_dir.parents[1]
-        build_root = workspace_root / "build"
-        exe_name = "packet-probe.exe" if os.name == "nt" else "packet-probe"
-
-        candidates = [
-            build_root / "packet-probe",
-            build_root / "apps" / "packet-probe-cli" / "packet-probe",
-            build_root / exe_name,
-            build_root / "apps" / "packet-probe-cli" / exe_name,
-        ]
-        # Multi-config generators (MSVC/Ninja Multi-Config) place binaries
-        # under a per-configuration subdirectory instead of build/ directly.
-        for config in ("Debug", "Release", "RelWithDebInfo", "MinSizeRel"):
-            candidates.append(build_root / config / exe_name)
-            candidates.append(build_root / "apps" / "packet-probe-cli" / config / exe_name)
-
-        for candidate in candidates:
-            if candidate.exists() and os.access(candidate, os.X_OK):
-                return str(candidate)
-    except Exception:
-        pass
-
-    return "packet-probe"
 
 
 def _chip_qss(bg: str, fg: str, border: str) -> str:
