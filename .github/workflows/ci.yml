@@ -76,8 +76,8 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Debug --output-on-failure --timeout 120
 
-  # The web gateway is the cross-platform viewer path; it needs wirestead-python
-  # (released as GitHub wheels, not on PyPI), not PySide6.
+  # The viewer's web gateway needs wirestead-python, released as GitHub wheels
+  # (not on PyPI).
   viewer-web:
     strategy:
       fail-fast: false
@@ -110,4 +110,4 @@ jobs:
         working-directory: viewer
         env:
           PYTHONPATH: .
-        run: python -m pytest -q tests/test_gateway.py tests/test_capture_command.py
+        run: python -m pytest -q

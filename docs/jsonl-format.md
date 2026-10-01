@@ -20,6 +20,8 @@ Common fields:
 
 - `seq`: event sequence number
 - `parent_seq`: source event sequence for derived events, always present
+- `parent_seqs`: every raw event sequence that contributed to a derived event, in
+  arrival order; always present, `[]` for raw transport events
 - `time_ns`: wall-clock timestamp in nanoseconds since Unix epoch
 - `session`: capture session id
 - `transport`: `tcp`, `udp`, `serial`, or future transport name
@@ -43,11 +45,11 @@ Latency fields:
 
 ## Sequence Policy
 
-- `seq` is used for file-local event ordering.
-- `parent_seq` links derived frame, decoded, or decoder error events to their source event.
-- Raw transport events use `parent_seq: 0`.
-- Frame events use the source raw event sequence as `parent_seq`.
-- Current derived events use a separate high sequence range starting at `1000000000000`
-  to avoid collisions with capture-session raw event sequences.
-- Future work may replace this with a shared `SequenceAllocator` across capture sessions
-  and the event pipeline.
+- `seq` is unique within one engine or CLI run: all capture sessions and the event
+  pipeline draw from one shared `SequenceAllocator`, so raw and derived events never
+  collide.
+- Raw transport events use `parent_seq: 0` and `parent_seqs: []`.
+- Derived events (frames, decoder errors) set `parent_seq` to the raw event that
+  completed them, and `parent_seqs` to all raw events whose bytes they were assembled
+  from. A frame split across two TCP reads, for example, has `parent_seq: 11` and
+  `parent_seqs: [10, 11]`; a frame from a single read has `parent_seqs: [parent_seq]`.

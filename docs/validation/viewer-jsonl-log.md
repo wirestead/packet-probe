@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Validate that Packet Probe Viewer can open a saved JSONL log and display events.
+Validate that the browser viewer can open a saved JSONL log and display its events.
 
 ## Generate log
 
@@ -13,7 +13,7 @@ packet-probe udp \
   --log udp.jsonl
 ```
 
-Send test datagram:
+Send a test datagram:
 
 ```sh
 python3 - <<'PY'
@@ -27,21 +27,14 @@ Stop Packet Probe.
 
 ## Open log
 
-```sh
-packet-probe-viewer
-```
-
-Then open:
-
-```text
-File > Open Log...
-```
-
-Select `udp.jsonl`.
+Start `packet-probe-web`, open the printed URL, click **Open log…** in the toolbar,
+and select `udp.jsonl`.
 
 ## Expected result
 
-* Viewer status changes to `offline log`.
-* Event table shows recorded events.
-* Selecting an event shows payload hex.
-* Event detail panel shows raw JSON.
+* The table shows the recorded events; the metadata line is not shown as an event.
+* The message area reports the file name and event count, plus the number of
+  malformed lines skipped, if any.
+* Selecting an event shows its payload in the Hex and Text tabs and the full event
+  in the JSON tab.
+* The file is read in the browser; nothing is uploaded to the gateway.

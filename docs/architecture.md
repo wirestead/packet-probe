@@ -94,8 +94,9 @@ Latency tracking:
 Without a protocol decoder, request/response pairing is heuristic-based. Protocol-specific
 decoders are expected to provide accurate pairing later.
 
-Viewer integration should happen through an IPC boundary, not by mixing PyQt code
-into the core library.
+Viewer integration happens through the IPC boundary, not by mixing UI code into the
+core library: the browser viewer talks to the engine only through the `packet-probe-web`
+gateway, which is an ordinary IPC client.
 
 UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
 Domain Socket communication sessions. UDS IPC is an internal local communication
