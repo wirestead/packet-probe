@@ -209,7 +209,8 @@ Manual validation options are documented in [docs/serial-validation.md](docs/ser
 
 ## UDP Direct Mode
 
-UDP Direct Mode binds a UDP socket and records received datagrams.
+UDP Direct Mode binds a UDP socket and records every received datagram, from any
+sender; each event's `source` is the sender's address.
 
 ```sh
 packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex

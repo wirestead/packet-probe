@@ -74,9 +74,8 @@ always loopback-only.
 
 Form values and macros are remembered per browser.
 
-UDP note: with a send-to target set, wirestead only records datagrams from that
-peer. Leave the target empty to record from any sender (the first sender then
-becomes the peer); Send needs a target.
+UDP note: every datagram arriving at the bind address is recorded, from any sender
+(each event's `source` is the sender). Send needs a send-to target.
 
 ## Test
 

@@ -69,10 +69,10 @@ plugins break collection; use `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
 
 ## Gotchas
 
-- **UDP send-to target filters reception.** With a target set, wirestead only
-  delivers datagrams from that exact peer (wirestead #435); traffic from other ports
-  is dropped silently. Leave it empty to accept the first sender, or send from the
-  target address (the driver binds its peer socket to the target port).
+- **UDP capture uses `wirestead::transport::UdpChannel`, not `wirestead::UdpClient`.**
+  `UdpClient` only delivers datagrams from one peer (wirestead #435), which silently
+  dropped other senders; the capture now receives through `on_bytes_from` and sends
+  with `async_write_to`. Don't switch it back to the wrapper.
 - **Send needs a UDP target** and is unavailable in tcp-proxy mode; the UI disables
   the button in both cases.
 - **Port 8080 already in use**: the gateway exits with `cannot listen on ...` before
