@@ -127,6 +127,7 @@ int main() {
   assert(first_line.find("\"type\":\"metadata\"") != std::string::npos);
   assert(first_line.find("\"schema\":\"packet-probe.log.v1\"") != std::string::npos);
   assert(second_line == line);
+  input.close();  // Windows cannot delete a file that is still open
   std::filesystem::remove(path);
 
   return 0;
