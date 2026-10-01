@@ -15,6 +15,7 @@ import itertools
 import json
 import queue
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -265,6 +266,8 @@ def main(argv: list[str] | None = None) -> int:
         print("packet-probe-web: WARNING remote access is plain HTTP; put it behind a TLS "
               "reverse proxy or an SSH tunnel on untrusted networks.", file=sys.stderr)
 
+    # Run the cleanup below on SIGTERM too, not just Ctrl+C, so the engine isn't orphaned.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
