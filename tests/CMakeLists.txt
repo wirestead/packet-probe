@@ -104,3 +104,8 @@ add_executable(test_tcp_capture_session test_tcp_capture_session.cpp)
 target_include_directories(test_tcp_capture_session PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(test_tcp_capture_session PRIVATE packet_probe::capture)
 add_test(NAME test_tcp_capture_session COMMAND test_tcp_capture_session)
+
+add_executable(test_udp_capture_session test_udp_capture_session.cpp)
+target_include_directories(test_udp_capture_session PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(test_udp_capture_session PRIVATE packet_probe::capture)
+add_test(NAME test_udp_capture_session COMMAND test_udp_capture_session)

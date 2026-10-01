@@ -280,7 +280,7 @@ const MODE_FIELDS = {
   "serial":     [["serial_port", "Serial port", "/dev/ttyUSB0"], ["baudrate", "Baud", "115200"]],
 };
 const MODE_HINTS = {
-  "udp": "Records datagrams arriving at the bind address. With a send-to target set, only that peer's datagrams are recorded; without one, the first sender becomes the peer.",
+  "udp": "Records every datagram arriving at the bind address, from any sender. Set a send-to target to send.",
   "tcp-client": "Connects to the device and records both directions.",
   "tcp-server": "Waits for one client to connect, then records the session.",
   "tcp-proxy": "Sits between your app and the device. Send is not available.",
