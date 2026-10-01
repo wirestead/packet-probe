@@ -97,7 +97,7 @@ bool TcpDirectCaptureSession::send(std::vector<std::uint8_t> payload) {
                     "packet-probe", remote_ep,
                     "TX " + std::to_string(size) + " bytes"));
   }
-  return accepted;
+  return static_cast<bool>(accepted);
 }
 
 PacketEvent TcpDirectCaptureSession::make_event(Direction direction, EventType type, std::vector<std::uint8_t> payload,

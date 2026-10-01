@@ -40,6 +40,21 @@ python -m pip install -e ".[test]"
 python -m pytest
 ```
 
+## Web UI (packet-probe-web)
+
+`packet-probe-web` serves a browser UI and relays the engine's IPC stream, so the
+viewer works from any browser and on Windows (it talks to the engine over TCP
+loopback IPC). It needs `wirestead-python`, not PySide6.
+
+```sh
+packet-probe-web                      # spawns `packet-probe engine --ipc tcp:127.0.0.1:<free port>`
+packet-probe-web --ipc tcp:127.0.0.1:19500   # or attach to a running engine (UDS paths work too)
+```
+
+Open the printed `http://127.0.0.1:8080/?token=...` URL. Every request needs that
+token. `--host 0.0.0.0` lets other machines connect; that is plain HTTP, so put it
+behind a TLS reverse proxy or an SSH tunnel on untrusted networks.
+
 ## Attach to an already-running engine
 
 Use this when `packet-probe engine --ipc <path>` is already running.

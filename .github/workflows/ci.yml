@@ -32,3 +32,82 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+
+    steps:
+      - name: Checkout Packet Probe
+        uses: actions/checkout@v4
+
+      - name: Checkout wirestead
+        uses: actions/checkout@v4
+        with:
+          repository: wirestead/wirestead
+          path: wirestead
+
+      # Boost from vcpkg takes minutes to build; cache its binary archives.
+      - name: Cache vcpkg archives
+        uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-x64-windows-boost-asio-v1
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install boost-asio boost-system --triplet x64-windows
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S . -B build -DPACKET_PROBE_BUILD_TESTS=ON
+          -DPACKET_PROBE_WIRESTEAD_SOURCE_DIR="$env:GITHUB_WORKSPACE/wirestead"
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      # Debug: the tests are assert()-based and NDEBUG would compile them out.
+      - name: Build
+        run: cmake --build build --config Debug --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build -C Debug --output-on-failure --timeout 120
+
+  # The web gateway is the cross-platform viewer path; it needs wirestead-python
+  # (released as GitHub wheels, not on PyPI), not PySide6.
+  viewer-web:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Packet Probe
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install wirestead-python
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUNNER_OS" in
+            Windows) plat=win_amd64 ;;
+            *) plat=manylinux_2_27_x86_64 ;;
+          esac
+          gh release download v0.9.6 -R wirestead/wirestead-python -D wheels \
+            -p "wirestead-0.9.6-cp312-cp312-*${plat}*.whl"
+          python -m pip install wheels/*.whl pytest
+
+      - name: Test
+        working-directory: viewer
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_gateway.py tests/test_capture_command.py

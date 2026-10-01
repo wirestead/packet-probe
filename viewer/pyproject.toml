@@ -22,10 +22,14 @@ test = [
 
 [project.scripts]
 packet-probe-viewer = "packet_probe_viewer.main:main"
+packet-probe-web = "packet_probe_viewer.gateway:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["packet_probe_viewer*"]
+
+[tool.setuptools.package-data]
+packet_probe_viewer = ["web/*.html"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

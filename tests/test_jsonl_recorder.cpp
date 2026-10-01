@@ -34,7 +34,7 @@ int main() {
 
   auto line = packet_probe::serialize_jsonl(event);
   assert(line ==
-         "{\"seq\":1,\"parent_seq\":0,\"time_ns\":1781234567890,\"session\":\"tcp-client-1\",\"transport\":\"tcp\","
+         "{\"seq\":1,\"parent_seq\":0,\"parent_seqs\":[],\"time_ns\":1781234567890,\"session\":\"tcp-client-1\",\"transport\":\"tcp\","
          "\"direction\":\"rx\",\"type\":\"raw_bytes\",\"size\":6,\"payload_hex\":\"0210010003A7\","
          "\"summary\":\"RX 6 bytes\"}");
 
@@ -127,6 +127,7 @@ int main() {
   assert(first_line.find("\"type\":\"metadata\"") != std::string::npos);
   assert(first_line.find("\"schema\":\"packet-probe.log.v1\"") != std::string::npos);
   assert(second_line == line);
+  input.close();  // Windows cannot delete a file that is still open
   std::filesystem::remove(path);
 
   return 0;

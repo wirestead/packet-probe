@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packet Probe</title>
+<style>
+  /* Palette from the PySide6 viewer's design mock: dark first, with a
+     per-mode accent (body[data-mode]) so the active transport reads at a glance. */
+  :root {
+    --bg: #05070d; --surface: #0b1016; --surface-2: #10141b; --bar: #090d14;
+    --border: #1e242e; --border-strong: #2a313c;
+    --text: #e5e8ed; --muted: #8a919c; --faint: #5d646f;
+    --tx: #f0b35a; --rx: #4fd1a1; --err: #f2726f;
+    --accent: #2cb3b3; --on-accent: #071012;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --bar: #ffffff;
+      --border: #e1e4e9; --border-strong: #cdd2da;
+      --text: #1b1f26; --muted: #5f6672; --faint: #8c939e;
+      --tx: #b46a00; --rx: #0d8a5f; --err: #d23c39;
+      --on-accent: #ffffff;
+      color-scheme: light;
+    }
+  }
+  body[data-mode="tcp-client"] { --accent: #4ba3f7; }
+  body[data-mode="tcp-server"] { --accent: #7e8ef4; }
+  body[data-mode="tcp-proxy"]  { --accent: #ae7ee2; }
+  body[data-mode="serial"]     { --accent: #eb883b; }
+  @media (prefers-color-scheme: light) {
+    body[data-mode="udp"] { --accent: #138a8a; }
+    body[data-mode="tcp-client"] { --accent: #1f74c9; }
+    body[data-mode="tcp-server"] { --accent: #4b5bd6; }
+    body[data-mode="tcp-proxy"] { --accent: #8a4fc4; }
+    body[data-mode="serial"] { --accent: #c4621a; }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 Inter, "Segoe UI", system-ui, sans-serif;
+         display: flex; flex-direction: column; }
+  [hidden] { display: none !important; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- controls ---- */
+  input:not([type=checkbox]), select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px;
+    padding: 6px 9px; min-height: 32px;
+  }
+  input:focus, select:focus { border-color: var(--accent); outline: none; }
+  input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+  button, .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 6px;
+    padding: 6px 12px; min-height: 32px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover:not(:disabled), .btn:hover { border-color: var(--faint); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var(--accent); }
+  button.danger { color: var(--err); }
+
+  .pills { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: var(--bg);
+           border: 1px solid var(--border); border-radius: 8px; }
+  .pills button { min-height: 26px; padding: 3px 10px; border: 0; background: transparent; color: var(--muted); }
+  .pills button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .pills.full { display: flex; }
+  .pills.full button { flex: 1; }
+
+  /* ---- app bar ---- */
+  .appbar { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px;
+            background: var(--bar); border-bottom: 1px solid var(--border); flex: none; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-right: 6px; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); }
+  .chip { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+          background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+  .dot.on { background: var(--rx); }
+  #state-chip .dot { background: var(--faint); }
+  #state-chip.offline .dot { background: var(--err); }
+  #state-chip.capturing { color: var(--accent); border-color: var(--accent); }
+  #state-chip.capturing .dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { #state-chip.capturing .dot { animation: none; } }
+  #message { margin-left: auto; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #message.error { color: var(--err); }
+
+  /* ---- layout ---- */
+  .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+  .sidebar { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;
+             border-right: 1px solid var(--border); background: var(--bar); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+          display: flex; flex-direction: column; gap: 10px; }
+  .card h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .hint { margin: 0; color: var(--faint); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 92px; gap: 8px; }
+  .grid:empty { display: none; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field > span { font-size: 11px; color: var(--muted); }
+  .field.wide, .check { grid-column: 1 / -1; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+  .actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .actions button { min-height: 40px; font-size: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > input { flex: 1; font-family: var(--mono); }
+  #send-eol { width: auto; }
+  #macros { display: flex; flex-wrap: wrap; gap: 6px; }
+  #macros .macro { display: inline-flex; }
+  #macros .macro button { min-height: 28px; padding: 3px 10px; }
+  #macros .macro button:first-child { border-radius: 6px 0 0 6px; }
+  #macros .macro button + button { border-left: 0; border-radius: 0 6px 6px 0; color: var(--faint); padding: 3px 8px; }
+  #macros .add { min-height: 28px; padding: 3px 10px; border-style: dashed; color: var(--muted); background: transparent; }
+
+  /* ---- main: toolbar, table, detail ---- */
+  main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px;
+             border-bottom: 1px solid var(--border); background: var(--bar); }
+  .toolbar #filter { width: 260px; max-width: 100%; }
+  .toolbar #type-filter { width: auto; }
+  #count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #table-wrap { flex: 1; min-height: 120px; overflow: auto; position: relative; }
+  table { border-collapse: collapse; width: 100%; }
+  th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; font-weight: 600;
+       font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+       border-bottom: 1px solid var(--border); }
+  th, td { padding: 5px 12px; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  td.num { text-align: right; color: var(--muted); }
+  td.time { color: var(--muted); }
+  td.summary, th:last-child { width: 100%; }
+  td.summary { white-space: normal; font-family: inherit; font-size: 13px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--surface); }
+  tbody tr.selected { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 3px 0 var(--accent); }
+  tr.error td.summary { color: var(--err); }
+  .badge { display: inline-block; min-width: 30px; text-align: center; padding: 1px 6px; border-radius: 4px;
+           font-size: 11px; font-weight: 700; }
+  .badge.tx { color: var(--tx); background: color-mix(in srgb, var(--tx) 14%, transparent); }
+  .badge.rx { color: var(--rx); background: color-mix(in srgb, var(--rx) 14%, transparent); }
+  .type { color: var(--muted); }
+  .empty { position: absolute; inset: 40px 0 auto; text-align: center; color: var(--faint); padding: 40px 16px; }
+  .empty strong { display: block; color: var(--muted); font-size: 14px; margin-bottom: 4px; }
+
+  #detail { flex: none; height: 34vh; min-height: 150px; display: flex; flex-direction: column;
+            border-top: 1px solid var(--border); background: var(--surface); }
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .tabs button { min-height: 26px; padding: 3px 12px; border: 0; background: transparent; color: var(--muted); border-radius: 6px; }
+  .tabs button.on { background: var(--surface-2); color: var(--accent); font-weight: 600; }
+  #detail-title { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .pane { flex: 1; margin: 0; padding: 10px 14px; overflow: auto; font: 12px/1.6 var(--mono); white-space: pre; }
+  #text.pane { white-space: pre-wrap; word-break: break-all; }
+  .pane:empty::before { content: "Select an event to inspect its payload."; color: var(--faint); font-family: Inter, system-ui, sans-serif; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; overflow-y: auto; }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+    main { min-height: 80vh; }
+    .appbar { gap: 6px; padding: 0 10px; }
+    .brand .name { display: none; }
+    #message { display: none; }
+  }
+</style>
+</head>
+<body data-mode="udp">
+<header class="appbar">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><span class="name">Packet Probe</span></div>
+  <span class="chip" title="gateway ↔ engine link"><span class="dot" id="engine-dot"></span><span id="link-text">engine offline</span></span>
+  <span class="chip" id="state-chip"><span class="dot"></span><span id="state">disconnected</span></span>
+  <span id="message" role="status"></span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="card">
+      <h2>Capture</h2>
+      <select id="mode" hidden>
+        <option value="udp">UDP</option>
+        <option value="tcp-client">TCP Client</option>
+        <option value="tcp-server">TCP Server</option>
+        <option value="tcp-proxy">TCP Proxy</option>
+        <option value="serial">Serial</option>
+      </select>
+      <div class="pills" data-for="mode"></div>
+      <p class="hint" id="mode-hint"></p>
+      <div class="grid" id="fields"></div>
+    </section>
+
+    <section class="card">
+      <h2>Frame decoder</h2>
+      <select id="decoder" aria-label="Frame decoder">
+        <option value="raw">Raw bytes (no framing)</option>
+        <option value="fixed">Fixed size</option>
+        <option value="delimiter">Delimiter</option>
+        <option value="length-prefix">Length prefix</option>
+      </select>
+      <div class="grid" id="decoder-fields"></div>
+    </section>
+
+    <section class="card">
+      <h2>Recording</h2>
+      <label class="check"><input type="checkbox" id="log-enabled"> Write JSONL log</label>
+      <label class="field"><span>Path on the engine's machine</span><input id="log-path" placeholder="capture.jsonl"></label>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="start">Start capture</button>
+      <button id="stop" class="danger" disabled>Stop</button>
+    </div>
+
+    <section class="card">
+      <h2>Send</h2>
+      <div class="row">
+        <select id="send-format" hidden><option value="text">Text</option><option value="hex">Hex</option></select>
+        <div class="pills" data-for="send-format"></div>
+        <select id="send-eol" title="Line ending appended to text payloads">
+          <option value="">No line ending</option><option value="lf">LF</option><option value="cr">CR</option><option value="crlf">CR LF</option>
+        </select>
+      </div>
+      <div class="row">
+        <input id="send-input" placeholder="payload" aria-label="Payload">
+        <button class="primary" id="send" disabled>Send</button>
+      </div>
+      <div id="macros"></div>
+    </section>
+  </aside>
+
+  <main>
+    <div class="toolbar">
+      <input id="filter" type="search" placeholder="Filter summary or hex…" aria-label="Filter">
+      <select id="dir-filter" hidden><option value="">All</option><option value="tx">TX</option><option value="rx">RX</option></select>
+      <div class="pills" data-for="dir-filter"></div>
+      <select id="type-filter" aria-label="Event type">
+        <option value="">All types</option><option value="raw_bytes">raw_bytes</option><option value="frame">frame</option>
+        <option value="latency">latency</option><option value="error">error</option><option value="state_change">state_change</option>
+      </select>
+      <span id="count"></span>
+      <button id="pause">Pause</button>
+      <label class="btn"><input type="file" id="open-log" accept=".jsonl,.json,.log,text/plain" hidden>Open log…</label>
+      <button id="clear">Clear</button>
+    </div>
+    <div id="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Time</th><th>Dir</th><th>Type</th><th>Size</th><th>Summary</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty"><strong>No events yet</strong>Start a capture on the left, or open a JSONL log.</div>
+    </div>
+    <section id="detail">
+      <div class="tabs" role="tablist">
+        <button data-tab="hex" class="on">Hex</button><button data-tab="text">Text</button><button data-tab="json">JSON</button>
+        <span id="detail-title"></span>
+      </div>
+      <pre id="hex" class="pane"></pre>
+      <pre id="text" class="pane" hidden></pre>
+      <pre id="json" class="pane" hidden></pre>
+    </section>
+  </main>
+</div>
+<datalist id="serial-ports"></datalist>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+// ponytail: plain DOM table capped at MAX_ROWS; switch to a virtual list if bigger live views are needed.
+const MAX_ROWS = 5000;
+
+// [key, label, default, wide?]
+const MODE_FIELDS = {
+  "udp":        [["bind_host", "Bind host", "0.0.0.0"], ["bind_port", "Port", "19000"],
+                 ["target_host", "Send to host (optional)", ""], ["target_port", "Port", ""]],
+  "tcp-client": [["host", "Device host", "127.0.0.1"], ["port", "Port", "19085"]],
+  "tcp-server": [["listen_host", "Listen host", "0.0.0.0"], ["listen_port", "Port", "19085"]],
+  "tcp-proxy":  [["listen_host", "Listen host", "127.0.0.1"], ["listen_port", "Port", "19000"],
+                 ["target_host", "Device host", "127.0.0.1"], ["target_port", "Port", "19085"]],
+  "serial":     [["serial_port", "Serial port", "/dev/ttyUSB0"], ["baudrate", "Baud", "115200"]],
+};
+const MODE_HINTS = {
+  "udp": "Records datagrams arriving at the bind address. With a send-to target set, only that peer's datagrams are recorded; without one, the first sender becomes the peer.",
+  "tcp-client": "Connects to the device and records both directions.",
+  "tcp-server": "Waits for one client to connect, then records the session.",
+  "tcp-proxy": "Sits between your app and the device. Send is not available.",
+  "serial": "Opens a serial port, e.g. /dev/ttyUSB0 or COM3.",
+};
+const DECODER_FIELDS = {
+  "raw": [],
+  "fixed": [["frame_size", "Frame size (bytes)", "16", true]],
+  "delimiter": [["delimiter_hex", "Delimiter (hex)", "0A", true], ["include_delimiter", "Keep delimiter in frame", false]],
+  "length-prefix": [["length_size", "Length bytes", "2"], ["length_endian", "Endian", "big"],
+                    ["length_includes_header", "Length includes header", false]],
+};
+const NUMERIC = new Set(["bind_port", "target_port", "port", "listen_port", "baudrate", "frame_size", "length_size"]);
+
+// Per-browser form memory only; the engine's own state comes from get_status.
+const saved = (() => { try { return JSON.parse(localStorage.getItem("pp-form") || "{}"); } catch { return {}; } })();
+function remember() {
+  const form = { mode: $("mode").value, decoder: $("decoder").value };
+  document.querySelectorAll("[data-key]").forEach((el) => { form[el.dataset.key] = el.type === "checkbox" ? el.checked : el.value; });
+  form.log_enabled = $("log-enabled").checked;
+  form.log_path = $("log-path").value;
+  form.send_eol = $("send-eol").value;
+  form.send_format = $("send-format").value;
+  try { localStorage.setItem("pp-form", JSON.stringify({ ...saved, ...form })); Object.assign(saved, form); } catch {}
+}
+
+function renderFields(container, specs) {
+  container.replaceChildren(...specs.map(([key, label, def, wide]) => {
+    const wrap = document.createElement("label");
+    const input = document.createElement("input");
+    input.dataset.key = key;
+    if (typeof def === "boolean") {
+      wrap.className = "check";
+      input.type = "checkbox";
+      input.checked = saved[key] ?? def;
+      wrap.append(input, label);
+    } else {
+      wrap.className = wide ? "field wide" : "field";
+      input.value = saved[key] ?? def;
+      if (NUMERIC.has(key)) input.inputMode = "numeric";
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      wrap.append(caption, input);
+    }
+    if (key === "serial_port") input.setAttribute("list", "serial-ports");
+    input.addEventListener("change", remember);
+    return wrap;
+  }));
+}
+function readFields(container) {
+  const out = {};
+  container.querySelectorAll("[data-key]").forEach((el) => {
+    out[el.dataset.key] = el.type === "checkbox" ? el.checked
+      : NUMERIC.has(el.dataset.key) ? Number(el.value || 0) : el.value.trim();
+  });
+  return out;
+}
+
+// Segmented buttons mirroring a hidden <select>, which stays the source of truth.
+function pills(select) {
+  const host = document.querySelector(`.pills[data-for="${select.id}"]`);
+  const render = () => host.replaceChildren(...[...select.options].map((o) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: o.textContent });
+    const on = o.value === select.value;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+    b.addEventListener("click", () => {
+      if (select.value !== o.value) { select.value = o.value; select.dispatchEvent(new Event("change")); }
+    });
+    return b;
+  }));
+  select.addEventListener("change", render);
+  render();
+}
+
+$("mode").value = saved.mode || "udp";
+$("decoder").value = saved.decoder || "raw";
+const syncMode = () => {
+  const mode = $("mode").value;
+  document.body.dataset.mode = mode;
+  $("mode-hint").textContent = MODE_HINTS[mode];
+  renderFields($("fields"), MODE_FIELDS[mode]);
+  if (mode === "serial") command({ command: "list_serial_ports" }).then((r) => {
+    $("serial-ports").replaceChildren(...(r.ports || []).map((p) => Object.assign(document.createElement("option"), { value: p })));
+  });
+};
+const syncDecoder = () => renderFields($("decoder-fields"), DECODER_FIELDS[$("decoder").value]);
+$("mode").addEventListener("change", () => { syncMode(); remember(); });
+$("decoder").addEventListener("change", () => { syncDecoder(); remember(); });
+syncMode(); syncDecoder();
+$("log-enabled").checked = !!saved.log_enabled;
+$("log-path").value = saved.log_path || "capture.jsonl";
+$("send-eol").value = saved.send_eol || "";
+$("send-format").value = saved.send_format || "text";
+for (const id of ["log-enabled", "log-path", "send-eol", "send-format"]) $(id).addEventListener("change", remember);
+const syncLogPath = () => { $("log-path").disabled = !$("log-enabled").checked; };
+$("log-enabled").addEventListener("change", syncLogPath);
+syncLogPath();
+const syncSendFormat = () => {
+  const hex = $("send-format").value === "hex";
+  $("send-input").placeholder = hex ? "AA BB CC 00" : "Type a message";
+  $("send-eol").disabled = hex;
+};
+$("send-format").addEventListener("change", syncSendFormat);
+syncSendFormat();
+for (const id of ["mode", "send-format", "dir-filter"]) pills($(id));
+
+function setMessage(text, isError = false) {
+  $("message").textContent = text;
+  $("message").title = text;
+  $("message").classList.toggle("error", isError);
+}
+
+async function command(cmd) {
+  try {
+    const res = await fetch("/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Token": token },
+      body: JSON.stringify(cmd),
+    });
+    if (!res.ok) return { ok: false, error: `gateway HTTP ${res.status}` };
+    return await res.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+let engineState = "idle";
+let engineMode = "";
+let engineConfig = null;
+function applyState(state, config) {
+  engineState = state;
+  if (config) { engineConfig = config; engineMode = config.mode; }
+  const capturing = state === "capturing";
+  $("state").textContent = capturing ? `Capturing · ${engineMode}` : state[0].toUpperCase() + state.slice(1);
+  $("state-chip").classList.toggle("capturing", capturing);
+  $("state-chip").classList.toggle("offline", state === "disconnected");
+  $("start").disabled = capturing || state === "disconnected";
+  $("stop").disabled = !capturing;
+  // tcp-proxy has no send; udp sends only to a configured target.
+  const noSend = engineMode === "tcp-proxy" ? "TCP proxy mode cannot send"
+    : engineMode === "udp" && !engineConfig?.target_host ? "Set a UDP send-to target to send" : "";
+  $("send").disabled = !capturing || !!noSend;
+  $("send").title = capturing ? noSend : "Start a capture to send";
+  renderMacros();
+}
+
+$("start").addEventListener("click", async () => {
+  remember();
+  const config = { mode: $("mode").value, ...readFields($("fields")),
+                   decoder: { decoder: $("decoder").value, ...readFields($("decoder-fields")) },
+                   log_path: $("log-enabled").checked ? $("log-path").value.trim() : "" };
+  let r = await command({ command: "configure", config });
+  if (r.ok) r = await command({ command: "start_capture" });
+  setMessage(r.ok ? "Capture started" : r.error, !r.ok);
+});
+$("stop").addEventListener("click", async () => {
+  const r = await command({ command: "stop_capture" });
+  setMessage(r.ok ? "Capture stopped" : r.error, !r.ok);
+});
+
+function toHex(text) {
+  return Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+const EOL = { lf: "\n", cr: "\r", crlf: "\r\n" };
+async function sendPayload(format, data, eol) {
+  const hex = format === "hex" ? data.replace(/0x|[\s,:-]/gi, "") : toHex(data + (EOL[eol] || ""));
+  if (!hex || !/^([0-9a-f]{2})+$/i.test(hex)) { setMessage("Payload must be whole hex bytes", true); return; }
+  const r = await command({ command: "send", payload_hex: hex.toUpperCase() });
+  setMessage(r.ok ? `Sent ${hex.length / 2} bytes` : r.error, !r.ok);
+}
+$("send").addEventListener("click", () => sendPayload($("send-format").value, $("send-input").value, $("send-eol").value));
+$("send-input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !$("send").disabled) $("send").click(); });
+
+// ---- macros: saved send payloads, per browser ----
+let macros = Array.isArray(saved.macros) ? saved.macros : [];
+function renderMacros() {
+  const add = Object.assign(document.createElement("button"), { textContent: "+ Save as macro", className: "add", type: "button" });
+  add.addEventListener("click", () => {
+    const data = $("send-input").value;
+    if (!data) { setMessage("Type a payload first", true); return; }
+    const name = prompt("Macro name", data.slice(0, 16));
+    if (!name) return;
+    macros.push({ name, format: $("send-format").value, data, eol: $("send-eol").value });
+    saveMacros();
+  });
+  $("macros").replaceChildren(...macros.map((m, i) => {
+    const wrap = Object.assign(document.createElement("span"), { className: "macro" });
+    const run = Object.assign(document.createElement("button"), { textContent: m.name, title: `${m.format}: ${m.data}` });
+    run.disabled = $("send").disabled;
+    run.addEventListener("click", () => sendPayload(m.format, m.data, m.eol));
+    const del = Object.assign(document.createElement("button"), { textContent: "×", title: "Delete macro" });
+    del.addEventListener("click", () => { macros.splice(i, 1); saveMacros(); });
+    wrap.append(run, del);
+    return wrap;
+  }), add);
+}
+function saveMacros() {
+  try { localStorage.setItem("pp-form", JSON.stringify({ ...saved, macros })); saved.macros = macros; } catch {}
+  renderMacros();
+}
+
+// ---- event table ----
+const rows = $("rows");
+const tableWrap = $("table-wrap");
+const events = [];
+let selected = null;
+
+function dirClass(d) { return d === "app_to_device" || d === "tx" ? "tx" : "rx"; }
+function dirLabel(d) { return dirClass(d) === "tx" ? "TX" : "RX"; }
+function formatTime(ns) {
+  if (!ns) return "";
+  const d = new Date(ns / 1e6);
+  const micros = String(Math.floor((ns / 1e3) % 1e6)).padStart(6, "0");
+  return d.toTimeString().slice(0, 8) + "." + micros;
+}
+function matches(ev) {
+  const dir = $("dir-filter").value;
+  if (dir && dirClass(ev.direction) !== dir) return false;
+  const type = $("type-filter").value;
+  if (type && ev.type !== type) return false;
+  const q = $("filter").value.trim().toLowerCase();
+  return !q || (ev.summary || "").toLowerCase().includes(q) || (ev.payload_hex || "").toLowerCase().includes(q.replace(/\s/g, ""));
+}
+let errorCount = 0;
+function updateCount() {
+  $("count").textContent = `${events.length} events` + (errorCount ? ` · ${errorCount} errors` : "")
+    + (pending.length ? ` · ${pending.length} paused` : "");
+  $("empty").hidden = events.length > 0 || pending.length > 0;
+}
+
+function cell(text, className) {
+  const td = document.createElement("td");
+  td.textContent = text ?? "";
+  if (className) td.className = className;
+  return td;
+}
+function addEvent(ev) {
+  const tr = document.createElement("tr");
+  const dir = cell("");
+  dir.append(Object.assign(document.createElement("span"), { className: "badge " + dirClass(ev.direction), textContent: dirLabel(ev.direction) }));
+  tr.append(cell(ev.seq, "num"), cell(formatTime(ev.time_ns), "time"), dir, cell(ev.type, "type"),
+            cell(ev.size, "num"), cell(ev.summary, "summary"));
+  if (ev.type === "error") { tr.classList.add("error"); errorCount++; }
+  tr.hidden = !matches(ev);
+  tr._event = ev;
+  const pinned = tableWrap.scrollTop + tableWrap.clientHeight >= tableWrap.scrollHeight - 4;
+  rows.append(tr);
+  events.push(ev);
+  if (events.length > MAX_ROWS) { events.shift(); rows.firstChild.remove(); }
+  if (pinned) tableWrap.scrollTop = tableWrap.scrollHeight;
+}
+
+// ---- detail panel ----
+function hexDump(hex) {
+  const bytes = hex.match(/../g) || [];
+  const lines = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const ascii = chunk.map((b) => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : "."; }).join("");
+    lines.push(i.toString(16).padStart(8, "0") + "  " + chunk.join(" ").padEnd(47) + "  " + ascii);
+  }
+  return lines.join("\n");
+}
+function payloadText(hex) {
+  const bytes = new Uint8Array((hex.match(/../g) || []).map((b) => parseInt(b, 16)));
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes)
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`);
+}
+function showDetail(ev) {
+  $("hex").textContent = ev ? hexDump(ev.payload_hex || "") : "";
+  $("text").textContent = ev ? payloadText(ev.payload_hex || "") : "";
+  $("json").textContent = ev ? JSON.stringify(ev, null, 2) : "";
+  $("detail-title").textContent = ev ? `#${ev.seq} · ${dirLabel(ev.direction)} · ${ev.size ?? 0} bytes` : "";
+}
+document.querySelectorAll(".tabs button").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach((t) => t.classList.toggle("on", t === tab));
+  for (const id of ["hex", "text", "json"]) $(id).hidden = id !== tab.dataset.tab;
+}));
+rows.addEventListener("click", (e) => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  selected?.classList.remove("selected");
+  selected = tr;
+  tr.classList.add("selected");
+  showDetail(tr._event);
+});
+
+const refilter = () => { for (const tr of rows.children) tr.hidden = !matches(tr._event); };
+$("filter").addEventListener("input", refilter);
+$("dir-filter").addEventListener("change", refilter);
+$("type-filter").addEventListener("change", refilter);
+$("clear").addEventListener("click", () => {
+  rows.replaceChildren(); events.length = 0; pending.length = 0; errorCount = 0; selected = null;
+  showDetail(null); updateCount();
+});
+
+// ---- pause: hold live events, flush on resume ----
+let paused = false;
+const pending = [];
+$("pause").addEventListener("click", () => {
+  paused = !paused;
+  $("pause").textContent = paused ? "Resume" : "Pause";
+  $("pause").classList.toggle("primary", paused);
+  if (!paused) { pending.splice(0).forEach(addEvent); }
+  updateCount();
+});
+
+// ---- offline JSONL log: parsed in the browser, never uploaded ----
+$("open-log").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  $("clear").click();
+  let bad = 0;
+  for (const line of (await file.text()).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) { if (obj.type !== "metadata") addEvent(obj); }
+      else bad++;
+    } catch { bad++; }
+  }
+  updateCount();
+  setMessage(`${file.name}: ${events.length} events` + (bad ? `, ${bad} malformed lines skipped` : ""), bad > 0);
+});
+
+// ---- live stream ----
+function syncStatus() {
+  command({ command: "get_status" }).then((r) => { if (r.ok) applyState(r.engine_state, r.config); });
+}
+function setLink(connected) {
+  $("engine-dot").classList.toggle("on", connected);
+  $("link-text").textContent = connected ? "engine connected" : "engine offline";
+}
+const stream = new EventSource("/events?token=" + encodeURIComponent(token));
+stream.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "gateway") {
+    setLink(msg.engine_connected);
+    if (msg.engine_connected) syncStatus(); else applyState("disconnected");
+  } else if (msg.type === "status") {
+    applyState(msg.engine_state, msg.config);
+  } else if (msg.type !== "metadata") {
+    if (paused) pending.push(msg); else addEvent(msg);
+    updateCount();
+  }
+};
+stream.onerror = () => {
+  setLink(false);
+  setMessage(token ? "Gateway connection lost, retrying…" : "Missing ?token= in the URL", true);
+};
+applyState("disconnected");
+updateCount();
+</script>
+</body>
+</html>
