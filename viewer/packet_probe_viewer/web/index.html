@@ -52,6 +52,12 @@
   #detail pre { flex: 1; margin: 0; padding: 8px 12px; overflow: auto; font: 12px/1.5 ui-monospace, monospace; }
   #detail pre + pre { border-left: 1px solid var(--border); }
   .bar.send { border-top: 1px solid var(--border); border-bottom: 0; }
+  .btn { display: inline-block; border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px;
+         color: var(--text); background: var(--bg); cursor: pointer; }
+  #macros:empty { display: none; }
+  #macros .macro { display: inline-flex; }
+  #macros .macro button:first-child { border-radius: 4px 0 0 4px; }
+  #macros .macro button + button { border-left: 0; border-radius: 0 4px 4px 0; color: var(--muted); }
   #send-input { flex: 1; min-width: 12em; font-family: ui-monospace, monospace; }
   @media (max-width: 640px) {
     #detail { flex-direction: column; height: 40%; }
@@ -83,6 +89,9 @@
     </select>
   </label>
   <span id="decoder-fields"></span>
+  <label title="JSONL log written by the engine, on the engine's machine">
+    <input type="checkbox" id="log-enabled"> Log <input id="log-path" class="host" placeholder="capture.jsonl">
+  </label>
   <button class="primary" id="start">Start</button>
   <button id="stop" disabled>Stop</button>
   <span id="message"></span>
@@ -92,7 +101,15 @@
   <label>Direction
     <select id="dir-filter"><option value="">all</option><option value="tx">TX</option><option value="rx">RX</option></select>
   </label>
+  <label>Type
+    <select id="type-filter">
+      <option value="">all</option><option value="raw_bytes">raw_bytes</option><option value="frame">frame</option>
+      <option value="latency">latency</option><option value="error">error</option><option value="state_change">state_change</option>
+    </select>
+  </label>
+  <button id="pause">Pause</button>
   <button id="clear">Clear</button>
+  <label class="button-like"><input type="file" id="open-log" accept=".jsonl,.json,.log,text/plain" hidden><span class="btn">Open Log…</span></label>
   <span id="count" style="color:var(--muted)"></span>
 </div>
 <main>
@@ -106,9 +123,13 @@
 </main>
 <div class="bar send">
   <select id="send-format"><option value="text">Text</option><option value="hex">Hex</option></select>
+  <select id="send-eol" title="appended to text payloads">
+    <option value="">EOL: none</option><option value="lf">EOL: LF</option><option value="cr">EOL: CR</option><option value="crlf">EOL: CRLF</option>
+  </select>
   <input id="send-input" placeholder="payload">
   <button id="send" disabled>Send</button>
 </div>
+<div class="bar send" id="macros"></div>
 <datalist id="serial-ports"></datalist>
 
 <script>
@@ -130,8 +151,9 @@ const MODE_FIELDS = {
 const DECODER_FIELDS = {
   "raw": [],
   "fixed": [["frame_size", "Size", "16"]],
-  "delimiter": [["delimiter_hex", "Delim hex", "0A"]],
-  "length-prefix": [["length_size", "Len bytes", "2"], ["length_endian", "Endian", "big"]],
+  "delimiter": [["delimiter_hex", "Delim hex", "0A"], ["include_delimiter", "keep delim", false]],
+  "length-prefix": [["length_size", "Len bytes", "2"], ["length_endian", "Endian", "big"],
+                    ["length_includes_header", "len incl. header", false]],
 };
 const NUMERIC = new Set(["bind_port", "target_port", "port", "listen_port", "baudrate", "frame_size", "length_size"]);
 
@@ -139,7 +161,11 @@ const NUMERIC = new Set(["bind_port", "target_port", "port", "listen_port", "bau
 const saved = (() => { try { return JSON.parse(localStorage.getItem("pp-form") || "{}"); } catch { return {}; } })();
 function remember() {
   const form = { mode: $("mode").value, decoder: $("decoder").value };
-  document.querySelectorAll("[data-key]").forEach((el) => { form[el.dataset.key] = el.value; });
+  document.querySelectorAll("[data-key]").forEach((el) => { form[el.dataset.key] = el.type === "checkbox" ? el.checked : el.value; });
+  form.log_enabled = $("log-enabled").checked;
+  form.log_path = $("log-path").value;
+  form.send_eol = $("send-eol").value;
+  form.send_format = $("send-format").value;
   try { localStorage.setItem("pp-form", JSON.stringify({ ...saved, ...form })); Object.assign(saved, form); } catch {}
 }
 
@@ -148,8 +174,13 @@ function renderFields(container, specs) {
     const wrap = document.createElement("label");
     const input = document.createElement("input");
     input.dataset.key = key;
-    input.value = saved[key] ?? def;
-    input.className = /port|size|baud/.test(key) ? "port" : "host";
+    if (typeof def === "boolean") {
+      input.type = "checkbox";
+      input.checked = saved[key] ?? def;
+    } else {
+      input.value = saved[key] ?? def;
+      input.className = /port|size|baud/.test(key) ? "port" : "host";
+    }
     if (key === "serial_port") input.setAttribute("list", "serial-ports");
     input.addEventListener("change", remember);
     wrap.append(label, input);
@@ -159,7 +190,8 @@ function renderFields(container, specs) {
 function readFields(container) {
   const out = {};
   container.querySelectorAll("[data-key]").forEach((el) => {
-    out[el.dataset.key] = NUMERIC.has(el.dataset.key) ? Number(el.value) : el.value.trim();
+    out[el.dataset.key] = el.type === "checkbox" ? el.checked
+      : NUMERIC.has(el.dataset.key) ? Number(el.value) : el.value.trim();
   });
   return out;
 }
@@ -176,6 +208,11 @@ const syncDecoder = () => renderFields($("decoder-fields"), DECODER_FIELDS[$("de
 $("mode").addEventListener("change", () => { syncMode(); remember(); });
 $("decoder").addEventListener("change", () => { syncDecoder(); remember(); });
 syncMode(); syncDecoder();
+$("log-enabled").checked = !!saved.log_enabled;
+$("log-path").value = saved.log_path || "capture.jsonl";
+$("send-eol").value = saved.send_eol || "";
+$("send-format").value = saved.send_format || "text";
+for (const id of ["log-enabled", "log-path", "send-eol", "send-format"]) $(id).addEventListener("change", remember);
 
 function setMessage(text, isError = false) {
   $("message").textContent = text;
@@ -206,12 +243,14 @@ function applyState(state, mode) {
   $("start").disabled = capturing;
   $("stop").disabled = !capturing;
   $("send").disabled = !capturing || engineMode === "tcp-proxy";
+  renderMacros();
 }
 
 $("start").addEventListener("click", async () => {
   remember();
   const config = { mode: $("mode").value, ...readFields($("fields")),
-                   decoder: { decoder: $("decoder").value, ...readFields($("decoder-fields")) } };
+                   decoder: { decoder: $("decoder").value, ...readFields($("decoder-fields")) },
+                   log_path: $("log-enabled").checked ? $("log-path").value.trim() : "" };
   let r = await command({ command: "configure", config });
   if (r.ok) r = await command({ command: "start_capture" });
   setMessage(r.ok ? "capture started" : r.error, !r.ok);
@@ -224,13 +263,42 @@ $("stop").addEventListener("click", async () => {
 function toHex(text) {
   return Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-$("send").addEventListener("click", async () => {
-  const raw = $("send-input").value;
-  let hex = $("send-format").value === "hex" ? raw.replace(/0x|[\s,:-]/gi, "") : toHex(raw);
+const EOL = { lf: "\n", cr: "\r", crlf: "\r\n" };
+async function sendPayload(format, data, eol) {
+  const hex = format === "hex" ? data.replace(/0x|[\s,:-]/gi, "") : toHex(data + (EOL[eol] || ""));
   if (!hex || !/^([0-9a-f]{2})+$/i.test(hex)) { setMessage("payload must be whole hex bytes", true); return; }
   const r = await command({ command: "send", payload_hex: hex.toUpperCase() });
   setMessage(r.ok ? `sent ${hex.length / 2} bytes` : r.error, !r.ok);
-});
+}
+$("send").addEventListener("click", () => sendPayload($("send-format").value, $("send-input").value, $("send-eol").value));
+
+// ---- macros: saved send payloads, per browser ----
+let macros = Array.isArray(saved.macros) ? saved.macros : [];
+function renderMacros() {
+  const add = Object.assign(document.createElement("button"), { textContent: "+ Save as macro" });
+  add.addEventListener("click", () => {
+    const data = $("send-input").value;
+    if (!data) { setMessage("type a payload first", true); return; }
+    const name = prompt("Macro name", data.slice(0, 16));
+    if (!name) return;
+    macros.push({ name, format: $("send-format").value, data, eol: $("send-eol").value });
+    saveMacros();
+  });
+  $("macros").replaceChildren(...macros.map((m, i) => {
+    const wrap = Object.assign(document.createElement("span"), { className: "macro" });
+    const run = Object.assign(document.createElement("button"), { textContent: m.name, title: `${m.format}: ${m.data}` });
+    run.disabled = $("send").disabled;
+    run.addEventListener("click", () => sendPayload(m.format, m.data, m.eol));
+    const del = Object.assign(document.createElement("button"), { textContent: "×", title: "delete macro" });
+    del.addEventListener("click", () => { macros.splice(i, 1); saveMacros(); });
+    wrap.append(run, del);
+    return wrap;
+  }), add);
+}
+function saveMacros() {
+  try { localStorage.setItem("pp-form", JSON.stringify({ ...saved, macros })); saved.macros = macros; } catch {}
+  renderMacros();
+}
 $("send-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("send").click(); });
 
 // ---- event table ----
@@ -249,10 +317,16 @@ function formatTime(ns) {
 function matches(ev) {
   const dir = $("dir-filter").value;
   if (dir && dirClass(ev.direction) !== dir) return false;
+  const type = $("type-filter").value;
+  if (type && ev.type !== type) return false;
   const q = $("filter").value.trim().toLowerCase();
   return !q || (ev.summary || "").toLowerCase().includes(q) || (ev.payload_hex || "").toLowerCase().includes(q.replace(/\s/g, ""));
 }
-function updateCount() { $("count").textContent = `${events.length} events`; }
+let errorCount = 0;
+function updateCount() {
+  $("count").textContent = `${events.length} events` + (errorCount ? ` · ${errorCount} errors` : "")
+    + (pending.length ? ` · ${pending.length} paused` : "");
+}
 
 function addEvent(ev) {
   const tr = document.createElement("tr");
@@ -264,7 +338,7 @@ function addEvent(ev) {
     if (i === 5) td.className = "summary";
     return td;
   }));
-  if (ev.type === "error") tr.classList.add("error");
+  if (ev.type === "error") { tr.classList.add("error"); errorCount++; }
   tr.hidden = !matches(ev);
   tr._event = ev;
   const pinned = tableWrap.scrollTop + tableWrap.clientHeight >= tableWrap.scrollHeight - 4;
@@ -297,9 +371,39 @@ rows.addEventListener("click", (e) => {
 const refilter = () => { for (const tr of rows.children) tr.hidden = !matches(tr._event); };
 $("filter").addEventListener("input", refilter);
 $("dir-filter").addEventListener("change", refilter);
+$("type-filter").addEventListener("change", refilter);
 $("clear").addEventListener("click", () => {
-  rows.replaceChildren(); events.length = 0; selected = null;
+  rows.replaceChildren(); events.length = 0; pending.length = 0; errorCount = 0; selected = null;
   $("hex").textContent = $("json").textContent = ""; updateCount();
+});
+
+// ---- pause: hold live events, flush on resume ----
+let paused = false;
+const pending = [];
+$("pause").addEventListener("click", () => {
+  paused = !paused;
+  $("pause").textContent = paused ? "Resume" : "Pause";
+  if (!paused) { pending.splice(0).forEach(addEvent); }
+  updateCount();
+});
+
+// ---- offline JSONL log: parsed in the browser, never uploaded ----
+$("open-log").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  $("clear").click();
+  let bad = 0;
+  for (const line of (await file.text()).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) { if (obj.type !== "metadata") addEvent(obj); }
+      else bad++;
+    } catch { bad++; }
+  }
+  updateCount();
+  setMessage(`${file.name}: ${events.length} events` + (bad ? `, ${bad} malformed lines skipped` : ""), bad > 0);
 });
 
 // ---- live stream ----
@@ -315,7 +419,7 @@ stream.onmessage = (e) => {
   } else if (msg.type === "status") {
     applyState(msg.engine_state, msg.config?.mode);
   } else if (msg.type !== "metadata") {
-    addEvent(msg);
+    if (paused) pending.push(msg); else addEvent(msg);
     updateCount();
   }
 };
