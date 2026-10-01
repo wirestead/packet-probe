@@ -5,6 +5,8 @@
 #include "wirestead/framer/line_framer.hpp"
 
 #include <atomic>
+#include <cstdint>
+#include <string_view>
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
@@ -12,14 +14,76 @@
 
 namespace packet_probe {
 
+namespace {
+
+constexpr std::string_view kTcpPrefix = "tcp:";
+
+std::unique_ptr<wirestead::wrapper::ServerInterface> make_uds_server(std::string const& socket_path) {
+  auto const path = std::filesystem::path(socket_path);
+  auto const parent = path.parent_path();
+  if (!parent.empty() && !std::filesystem::exists(parent)) {
+    throw std::runtime_error("IPC socket parent directory does not exist: " + parent.string());
+  }
+  if (std::filesystem::is_directory(path)) {
+    throw std::runtime_error("IPC socket path is a directory: " + socket_path);
+  }
+
+  // Stale socket cleanup: UDS in Unix requires removing the socket file before binding.
+  std::error_code remove_err;
+  if (std::filesystem::exists(path)) {
+    std::filesystem::remove(path, remove_err);
+  }
+
+  auto server = std::make_unique<wirestead::UdsServer>(socket_path);
+  server->max_clients(16);
+  server->auto_start(false);
+  // IPC is a local, single-host control channel; restrict it to the owner to prevent
+  // other local users from observing captured traffic or issuing commands.
+  server->socket_permissions(0600);
+  return server;
+}
+
+// "tcp:<host>:<port>". The IPC channel is unauthenticated, so the host must be a
+// loopback address; remote access belongs to a front end (e.g. the web gateway).
+std::unique_ptr<wirestead::wrapper::ServerInterface> make_tcp_server(std::string const& address) {
+  auto const host_port = address.substr(kTcpPrefix.size());
+  auto const colon = host_port.rfind(':');
+  if (colon == std::string::npos || colon == 0) {
+    throw std::invalid_argument("IPC TCP address must be tcp:<host>:<port>: " + address);
+  }
+  auto const host = host_port.substr(0, colon);
+  auto const port_str = host_port.substr(colon + 1);
+  std::size_t parsed = 0;
+  unsigned long port = 0;
+  try {
+    port = std::stoul(port_str, &parsed);
+  } catch (std::exception const&) {
+  }
+  if (parsed != port_str.size() || port == 0 || port > 65535) {
+    throw std::invalid_argument("invalid IPC TCP port: " + port_str);
+  }
+  if (host.rfind("127.", 0) != 0 && host != "::1") {
+    throw std::invalid_argument("IPC TCP host must be a loopback address (127.x.x.x or ::1): " + host);
+  }
+
+  auto server = std::make_unique<wirestead::TcpServer>(static_cast<std::uint16_t>(port));
+  server->bind_address(host);
+  server->max_clients(16);
+  server->auto_start(false);
+  return server;
+}
+
+}  // namespace
+
 struct IpcEventServer::Impl {
   explicit Impl(IpcServerOptions server_options) : options(std::move(server_options)) {}
 
   IpcServerOptions options;
-  std::unique_ptr<wirestead::UdsServer> server;
+  std::unique_ptr<wirestead::wrapper::ServerInterface> server;
   std::atomic<bool> is_running{false};
   CommandHandler command_handler;
   std::mutex command_handler_mutex;
+  bool is_tcp = false;
 
   void start() {
     if (options.socket_path.empty()) {
@@ -29,29 +93,8 @@ struct IpcEventServer::Impl {
       return;
     }
 
-    auto const path = std::filesystem::path(options.socket_path);
-    auto const parent = path.parent_path();
-    if (!parent.empty() && !std::filesystem::exists(parent)) {
-      throw std::runtime_error("IPC socket parent directory does not exist: " + parent.string());
-    }
-    if (std::filesystem::is_directory(path)) {
-      throw std::runtime_error("IPC socket path is a directory: " + options.socket_path);
-    }
-
-    // Windows supports UDS via AF_UNIX as well.
-    // Stale socket cleanup: UDS in Unix requires removing the socket file before binding.
-    // wirestead::UdsServer might not handle this or might throw, so let's clean it up if it exists.
-    std::error_code remove_err;
-    if (std::filesystem::exists(path) && !std::filesystem::is_directory(path)) {
-      std::filesystem::remove(path, remove_err);
-    }
-
-    server = std::make_unique<wirestead::UdsServer>(options.socket_path);
-    server->max_clients(16);
-    server->auto_start(false);
-    // IPC is a local, single-host control channel; restrict it to the owner to prevent
-    // other local users from observing captured traffic or issuing commands.
-    server->socket_permissions(0600);
+    is_tcp = options.socket_path.rfind(kTcpPrefix, 0) == 0;
+    server = is_tcp ? make_tcp_server(options.socket_path) : make_uds_server(options.socket_path);
 
     // Enable line framing so on_message delivers complete newline-terminated commands
     server->framer([]() {
@@ -84,7 +127,7 @@ struct IpcEventServer::Impl {
     if (!started) {
       server.reset();
       is_running.store(false);
-      throw std::runtime_error("failed to start IPC UDS server");
+      throw std::runtime_error("failed to start IPC server on " + options.socket_path);
     }
 
     is_running.store(true);
@@ -98,8 +141,10 @@ struct IpcEventServer::Impl {
       server.reset();
     }
 
-    std::error_code ignored;
-    std::filesystem::remove(options.socket_path, ignored);
+    if (!is_tcp) {
+      std::error_code ignored;
+      std::filesystem::remove(options.socket_path, ignored);
+    }
   }
 
   bool running() const { return is_running.load(); }
@@ -122,7 +167,7 @@ struct IpcEventServer::Impl {
     if (!server || !is_running.load()) {
       return false;
     }
-    return server->send_to(static_cast<wirestead::ClientId>(client_id), line + '\n');
+    return static_cast<bool>(server->send_to(static_cast<wirestead::ClientId>(client_id), line + '\n'));
   }
 
   void broadcast_raw(std::string const& line) {

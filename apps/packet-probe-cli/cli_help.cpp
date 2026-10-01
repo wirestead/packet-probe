@@ -51,6 +51,7 @@ void print_help(std::ostream& out) {
       << "  --send-file <path>  Send one binary file payload and exit\n"
       << "  --log <path>      Write events as JSONL\n"
       << "  --ipc <path>      Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "                        (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  --hex             Print one-line hex output for raw byte events\n"
       << "  --hex-raw         Print one-line hex output for raw byte events\n"
       << "  --hex-frame       Print one-line hex output for frame events\n"
@@ -72,6 +73,7 @@ void print_tcp_server_help(std::ostream& out) {
       << "  --send-file <path>    Send one binary file payload and exit\n"
       << "  --log <path>          Write events as JSONL\n"
       << "  --ipc <path>          Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "                        (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  --hex                 Print one-line hex output for raw byte events\n"
       << "  --hex-frame           Print one-line hex output for frame events\n"
       << "  --help                Show this help\n";
@@ -90,6 +92,7 @@ void print_tcp_proxy_help(std::ostream& out) {
       << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
       << "  --log <path>          Write events as JSONL\n"
       << "  --ipc <path>          Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "                        (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  --hex                 Print one-line hex output for raw byte events\n"
       << "  --hex-frame           Print one-line hex output for frame events\n"
       << "  --latency             Enable heuristic request/response latency events\n"
@@ -114,6 +117,7 @@ void print_serial_help(std::ostream& out) {
       << "  --send-file <path>         Send one binary file payload and exit\n"
       << "  --log <path>               Write events as JSONL\n"
       << "  --ipc <path>               Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "                        (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  --hex                      Print one-line hex output for raw byte events\n"
       << "  --hex-frame                Print one-line hex output for frame events\n"
       << "  --help                     Show this help\n";
@@ -134,6 +138,7 @@ void print_udp_help(std::ostream& out) {
       << "  --send-file <path>         Send one binary file datagram and exit\n"
       << "  --log <path>               Write events as JSONL\n"
       << "  --ipc <path>               Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "                        (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  --hex                      Print one-line hex output for raw byte events\n"
       << "  --hex-frame                Print one-line hex output for frame events\n"
       << "  --help                     Show this help\n";
@@ -148,7 +153,8 @@ void print_engine_help(std::ostream& out) {
       << "list_serial_ports, send. See docs/ipc-protocol.md for the message schema.\n"
       << "\n"
       << "Options:\n"
-      << "  --ipc <path>          Unix Domain Socket path for the IPC control channel\n"
+      << "  --ipc <path>          Unix Domain Socket path for the IPC control channel,\n"
+      << "                        or tcp:127.0.0.1:<port> for TCP loopback (Windows)\n"
       << "  --help                Show this help\n";
 }
 

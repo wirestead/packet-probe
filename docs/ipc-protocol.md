@@ -19,14 +19,16 @@ using the wirestead UDS transport.
 
 ## Transport
 
-Packet Probe IPC uses the wirestead UDS transport.
+Packet Probe IPC uses a wirestead stream transport, chosen by the `--ipc` value:
 
-The protocol is newline-delimited JSON over a local byte stream. Each viewer
-client receives one metadata line on connection, followed by event JSON lines.
+- `<path>`: Unix Domain Socket (wirestead `UdsServer`), socket file mode `0600`.
+- `tcp:<host>:<port>`: TCP (wirestead `TcpServer`). The host must be a loopback
+  address (`127.x.x.x` or `::1`); anything else is rejected, because the channel
+  has no authentication. Use this on Windows, where UDS is not yet validated.
 
-Windows support depends on the underlying wirestead UDS implementation and OS
-support. TCP loopback or named pipes may be considered later only if UDS support
-is insufficient for packaged applications.
+The protocol is newline-delimited JSON over a local byte stream and is identical
+on both transports. Each viewer client receives one metadata line on connection,
+followed by event JSON lines.
 
 ## CLI Usage
 
@@ -38,6 +40,8 @@ packet-probe udp \
   --bind-port 19000 \
   --ipc /tmp/packet-probe.sock \
   --log udp.jsonl
+
+packet-probe engine --ipc tcp:127.0.0.1:19500
 ```
 
 `--ipc`, `--log`, `--hex`, and `--hex-frame` are independent. A capture can write
@@ -191,7 +195,7 @@ Future versions may add:
 
 ## Socket Lifecycle
 
-When IPC starts:
+When IPC starts (UDS only; a TCP listener has no file to manage):
 
 - the parent directory must exist
 - a stale socket at the same path is removed
