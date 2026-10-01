@@ -30,6 +30,12 @@ if(EXISTS "${PACKET_PROBE_WIRESTEAD_SOURCE_DIR}/CMakeLists.txt")
       OFF
       CACHE BOOL "" FORCE
   )
+  # Link wirestead statically: packet-probe then runs without a wirestead DLL next
+  # to it (Windows has no rpath), for both the shipped binary and the tests.
+  set(WIRESTEAD_BUILD_SHARED
+      OFF
+      CACHE BOOL "" FORCE
+  )
   add_subdirectory("${PACKET_PROBE_WIRESTEAD_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wirestead")
 else()
   find_package(wirestead CONFIG REQUIRED)

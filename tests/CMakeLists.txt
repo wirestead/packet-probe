@@ -1,3 +1,7 @@
+# The tests are assert()-based; keep them checking in Release builds too (the
+# vendored wirestead defaults CMAKE_BUILD_TYPE to Release, which adds NDEBUG).
+add_compile_options($<IF:$<CXX_COMPILER_ID:MSVC>,/UNDEBUG,-UNDEBUG>)
+
 add_executable(test_hex_dump test_hex_dump.cpp)
 target_include_directories(test_hex_dump PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(test_hex_dump PRIVATE packet_probe::core)
