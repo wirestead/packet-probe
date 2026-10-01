@@ -240,19 +240,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
 
+    address = args.ipc or f"tcp:127.0.0.1:{_free_loopback_port()}"
+    link = EngineLink(address)
+
+    # Bind HTTP before spawning the engine, so a taken port can't orphan it.
+    token = secrets.token_urlsafe(16)
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), make_handler(link, token))
+    except OSError as exc:
+        print(f"packet-probe-web: cannot listen on {args.host}:{args.port}: {exc} (try --port)", file=sys.stderr)
+        return 1
+    server.daemon_threads = True
+
     engine = None
-    address = args.ipc
-    if not address:
-        address = f"tcp:127.0.0.1:{_free_loopback_port()}"
+    if not args.ipc:
         cli = args.cli or find_packet_probe_binary()
         engine = subprocess.Popen([cli, "engine", "--ipc", address])
-
-    link = EngineLink(address)
     link.start()
-
-    token = secrets.token_urlsafe(16)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(link, token))
-    server.daemon_threads = True
 
     shown_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     print(f"packet-probe-web: engine {address}")
