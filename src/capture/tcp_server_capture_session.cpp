@@ -167,7 +167,7 @@ bool TcpServerCaptureSession::send(std::vector<std::uint8_t> payload) {
 
   auto const size = payload.size();
   std::string_view data(reinterpret_cast<const char*>(payload.data()), size);
-  bool accepted = impl_->server->send_to(client_id, data);
+  bool const accepted = static_cast<bool>(impl_->server->send_to(client_id, data));
 
   if (accepted) {
     auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);

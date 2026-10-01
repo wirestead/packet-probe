@@ -105,7 +105,7 @@ bool UdpDirectCaptureSession::send(std::vector<std::uint8_t> payload) {
                     endpoint(options_.bind_host, options_.bind_port), endpoint(options_.target_host, options_.target_port),
                     summary_for(Direction::AppToDevice, size)));
   }
-  return accepted;
+  return static_cast<bool>(accepted);
 }
 
 PacketEvent UdpDirectCaptureSession::make_event(Direction direction, EventType type, std::vector<std::uint8_t> payload,

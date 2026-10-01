@@ -98,7 +98,7 @@ bool SerialDirectCaptureSession::send(std::vector<std::uint8_t> payload) {
     emit(make_event(Direction::AppToDevice, EventType::RawBytes, std::move(sent_payload), "packet-probe", options_.port,
                     summary_for(Direction::AppToDevice, size)));
   }
-  return accepted;
+  return static_cast<bool>(accepted);
 }
 
 PacketEvent SerialDirectCaptureSession::make_event(Direction direction, EventType type, std::vector<std::uint8_t> payload,
