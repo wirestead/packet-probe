@@ -1,170 +1,133 @@
-"""In-process driver for the Packet Probe Viewer (PySide6) GUI.
+"""Drives packet-probe-web end to end over HTTP, the same way the browser does.
 
-Rather than external UI automation (tmux/screen-scraping), this instantiates
-the real `MainWindow` inside a real `QApplication` and drives it directly via
-its Python API/widgets - the same approach the project's own
-`viewer/tests/test_main_window.py` uses with pytest-qt's `qtbot`, just outside
-pytest so it can run as a one-shot script and take real screenshots.
+Starts the gateway (which spawns `packet-probe engine`), starts a UDP capture,
+sends a datagram, waits for its event on the SSE stream, sends one back, stops,
+and checks that stopping the gateway also stops its engine. Exit 0 = pass.
 
-Usage (run from the `viewer/` directory so `packet_probe_viewer` importable,
-or let this script add it to sys.path via --viewer-dir):
-
-    python driver.py screenshot [--out-dir DIR]
-    python driver.py udp-capture [--out-dir DIR] [--port PORT] [--cli-path PATH]
-
-Exit code 0 on success, 1 on failure. Screenshots (PNG) are written to
---out-dir (default: alongside this script).
+    python .claude/skills/run-packet-probe-viewer/driver.py [--python PY] [--cli PATH]
 """
 
 import argparse
+import json
 import os
+import re
 import socket
+import subprocess
 import sys
+import threading
 import time
+import urllib.request
 from pathlib import Path
 
-SKILL_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SKILL_DIR.parents[2]  # .claude/skills/run-packet-probe-viewer -> repo root
-VIEWER_DIR = REPO_ROOT / "viewer"
-DEFAULT_CLI_PATH = REPO_ROOT / "build" / "Debug" / "packet-probe.exe"
+REPO = Path(__file__).resolve().parents[3]
 
 
-def pump(app, duration_s):
-    end = time.time() + duration_s
-    while time.time() < end:
-        app.processEvents()
-        time.sleep(0.02)
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
-def make_window():
-    sys.path.insert(0, str(VIEWER_DIR))
-    os.chdir(VIEWER_DIR)
-    from PySide6.QtWidgets import QApplication
-    from packet_probe_viewer.main_window import MainWindow
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    window = MainWindow()
-    window.resize(1400, 900)
-    window.show()
-    return app, window
+def fail(msg: str) -> None:
+    print(f"FAIL: {msg}")
+    sys.exit(1)
 
 
-def shutdown(app, window):
-    try:
-        if getattr(window, "capture_process", None) and window.capture_process.is_running():
-            window.stop_capture_btn.click()
-            pump(app, 1.0)
-            window.capture_process.stop()
-        window.close()
-        pump(app, 0.3)
-    except Exception as exc:
-        print(f"[driver] non-fatal cleanup error: {exc}")
-    app.quit()
-    # Some Qt worker threads (IpcClientWorker) can outlive a clean app.quit()
-    # on Windows; force-exit rather than hang the driver process.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(0)
-
-
-def cmd_screenshot(args):
-    app, window = make_window()
-    pump(app, 0.5)
-    out = Path(args.out_dir) / "screenshot.png"
-    window.grab().save(str(out))
-    print(f"[driver] PASS: screenshot written to {out}")
-    shutdown(app, window)
-
-
-def cmd_udp_capture(args):
-    app, window = make_window()
-    pump(app, 0.5)
-    out_dir = Path(args.out_dir)
-
-    window.grab().save(str(out_dir / "01_before_start.png"))
-
-    window.cli_path_edit.setText(args.cli_path)
-    window.mode_combo.setCurrentIndex(0)  # UDP
-    window.udp_bind_host.setText("127.0.0.1")
-    window.udp_bind_port.setText(str(args.port))
-    # Must be cleared: a non-empty Target Host/Port connect()s the UDP socket
-    # to that one peer, silently dropping datagrams from any other source
-    # (see Gotchas in SKILL.md) - the default form values are NOT receive-all.
-    window.udp_target_host.setText("")
-    window.udp_target_port.setText("")
-    pump(app, 0.2)
-
-    print(f"[driver] cli_path = {window.cli_path_edit.text()}")
-    window.start_capture_btn.click()
-
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        app.processEvents()
-        time.sleep(0.05)
-        if window._engine_state == "capturing":
-            break
-
-    print(f"[driver] engine_state = {window._engine_state}, ipc_connected = {window._ipc_connected}")
-    window.grab().save(str(out_dir / "02_after_capturing.png"))
-
-    if window._engine_state != "capturing":
-        print("[driver] FAIL: engine never reached capturing state")
-        print("---process_output---")
-        print(window.process_output.toPlainText())
-        shutdown(app, window)
-        sys.exit(1)
-
-    pump(app, 0.5)  # let the udp socket finish binding before we send
-    baseline_rows = window.table_model.rowCount()
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", args.port))
-    s.close()
-
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        app.processEvents()
-        time.sleep(0.05)
-        if window.table_model.rowCount() > baseline_rows:
-            break
-
-    row_count = window.table_model.rowCount()
-    window.grab().save(str(out_dir / "03_after_event.png"))
-
-    got_raw_bytes = False
-    for r in range(row_count):
-        row_type = window.table_model.data(window.table_model.index(r, 4))
-        if row_type == "raw_bytes":
-            got_raw_bytes = True
-
-    window.stop_capture_btn.click()
-    pump(app, 1.0)
-
-    if got_raw_bytes:
-        print(f"[driver] PASS: {row_count} events captured (baseline {baseline_rows}), raw_bytes event seen")
-        shutdown(app, window)
-    else:
-        print(f"[driver] FAIL: no raw_bytes event after sending test datagram ({row_count} rows total)")
-        shutdown(app, window)
-        sys.exit(1)
-
-
-SCENARIOS = {
-    "screenshot": cmd_screenshot,
-    "udp-capture": cmd_udp_capture,
-}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=sorted(SCENARIOS))
-    parser.add_argument("--out-dir", default=str(SKILL_DIR))
-    parser.add_argument("--port", type=int, default=19126)
-    parser.add_argument("--cli-path", default=str(DEFAULT_CLI_PATH))
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--python", default=sys.executable, help="Python with wirestead-python installed")
+    parser.add_argument("--cli", default="", help="packet-probe executable (default: auto-detect)")
     args = parser.parse_args()
 
-    Path(args.out_dir).mkdir(parents=True, exist_ok=True)
-    SCENARIOS[args.scenario](args)
+    http_port, udp_port, peer_port = free_port(), free_port(), free_port()
+    env = {**os.environ, "PYTHONPATH": str(REPO / "viewer")}
+    cmd = [args.python, "-m", "packet_probe_viewer.gateway", "--port", str(http_port)]
+    if args.cli:
+        cmd += ["--cli", args.cli]
+    gw = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    lines: list[str] = []
+    threading.Thread(target=lambda: lines.extend(iter(gw.stdout.readline, "")), daemon=True).start()
+    base = token = engine_addr = None
+    for _ in range(100):
+        out = "".join(lines)
+        m = re.search(r"open (http://\S+)/\?token=(\S+)", out)
+        e = re.search(r"engine (tcp:\S+)", out)
+        if m and e:
+            base, token, engine_addr = m.group(1), m.group(2), e.group(1)
+            break
+        if gw.poll() is not None:
+            fail("gateway exited:\n" + out)
+        time.sleep(0.1)
+    if not base:
+        fail("gateway did not print its URL:\n" + "".join(lines))
+    print(f"gateway {base}  engine {engine_addr}")
+
+    def command(body: dict) -> dict:
+        req = urllib.request.Request(base + "/command", data=json.dumps(body).encode(),
+                                     headers={"X-Token": token}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return json.loads(res.read())
+
+    events: list[dict] = []
+    def read_sse() -> None:
+        with urllib.request.urlopen(f"{base}/events?token={token}", timeout=30) as res:
+            for raw in res:
+                line = raw.decode().strip()
+                if line.startswith("data: "):
+                    events.append(json.loads(line[len("data: "):]))
+    threading.Thread(target=read_sse, daemon=True).start()
+
+    def wait_for(pred, what: str, timeout: float = 5.0) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for ev in list(events):
+                if pred(ev):
+                    return ev
+            time.sleep(0.05)
+        fail(f"timed out waiting for {what}; got {[e.get('type') for e in events]}")
+
+    try:
+        wait_for(lambda e: e.get("type") == "gateway" and e.get("engine_connected"), "engine link")
+        config = {"mode": "udp", "bind_host": "127.0.0.1", "bind_port": udp_port,
+                  "target_host": "127.0.0.1", "target_port": peer_port}
+        for body in ({"command": "configure", "config": config}, {"command": "start_capture"}):
+            r = command(body)
+            if not r.get("ok"):
+                fail(f"{body['command']}: {r}")
+        wait_for(lambda e: e.get("type") == "status" and e.get("engine_state") == "capturing", "capturing status")
+
+        peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        peer.bind(("127.0.0.1", peer_port))
+        peer.settimeout(5)
+        peer.sendto(b"ping", ("127.0.0.1", udp_port))
+        wait_for(lambda e: e.get("type") == "raw_bytes" and e.get("payload_hex") == "70696E67", "RX ping event")
+        print("RX ping event: ok")
+
+        r = command({"command": "send", "payload_hex": "414243"})
+        if not r.get("ok"):
+            fail(f"send: {r}")
+        if peer.recvfrom(64)[0] != b"ABC":
+            fail("peer did not receive the sent payload")
+        wait_for(lambda e: e.get("type") == "raw_bytes" and e.get("direction") == "app_to_device", "TX event")
+        print("TX send: ok")
+
+        if not command({"command": "stop_capture"}).get("ok"):
+            fail("stop_capture")
+        wait_for(lambda e: e.get("type") == "status" and e.get("engine_state") == "idle", "idle status")
+    finally:
+        gw.terminate()
+        gw.wait(10)
+
+    # The gateway must take its engine down with it (SIGTERM path).
+    host, port = engine_addr[len("tcp:"):].rsplit(":", 1)
+    time.sleep(0.5)
+    try:
+        socket.create_connection((host, int(port)), timeout=1).close()
+        fail("engine still listening after the gateway stopped")
+    except OSError:
+        pass
+    print("PASS")
 
 
 if __name__ == "__main__":

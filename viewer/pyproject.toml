@@ -1,7 +1,7 @@
 [project]
 name = "packet-probe-viewer"
-version = "0.1.0"
-description = "Optional read-only viewer for Packet Probe event streams"
+version = "0.2.0"
+description = "Browser viewer and web gateway for Packet Probe event streams"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -9,10 +9,9 @@ authors = [
   { name = "Packet Probe contributors" }
 ]
 dependencies = [
-  "PySide6>=6.6",
-  # Live IPC requires wirestead-python.
-  # Keep this as a documented local/sibling dependency until packaged wheels are available.
-  # "wirestead-python>=0.8.7",
+  # The gateway needs wirestead-python (import name `wirestead`). It is released as
+  # GitHub wheels, not on PyPI, so install it first (see README.md).
+  # "wirestead>=0.9.6",
 ]
 
 [project.optional-dependencies]
@@ -21,7 +20,6 @@ test = [
 ]
 
 [project.scripts]
-packet-probe-viewer = "packet_probe_viewer.main:main"
 packet-probe-web = "packet_probe_viewer.gateway:main"
 
 [tool.setuptools.packages.find]

@@ -36,7 +36,6 @@ written as JSONL for later viewer support.
 - No replay support yet
 - TCP server mode accepts one client connection per process run
 - UDS IPC currently uses synchronous broadcast
-- Viewer capture start/stop control not implemented yet
 
 ## Build
 
@@ -258,21 +257,17 @@ CLI helpers are internal implementation details.
 
 ## Viewer
 
-Packet Probe includes an optional PySide6-based viewer under `viewer/`.
+Packet Probe includes a browser viewer under `viewer/`. `packet-probe-web` starts
+`packet-probe engine`, serves the UI, and relays the engine's IPC stream to the
+browser, so capture can be configured, started, stopped, sent to, and inspected from
+any browser on Linux, macOS, or Windows. It can also attach to an engine that is
+already running (`--ipc <path>` or `--ipc tcp:127.0.0.1:<port>`) and open JSONL logs.
 
-The viewer connects to Packet Probe's UDS IPC event stream and displays packet
-events in a table with hex and JSON detail views. The viewer can either connect
-to an existing IPC socket or launch `packet-probe` directly and connect to the
-generated IPC socket.
+```sh
+packet-probe-web          # prints http://127.0.0.1:8080/?token=...
+```
 
-The IPC channel is bidirectional. The viewer can send a `send` command to
-transmit a hex payload to the connected device (tcp-client, tcp-server, serial,
-udp modes). Packet Probe IPC is implemented through the wirestead UDS transport.
-
-See [viewer/README.md](viewer/README.md) for viewer installation and usage.
-
-PySide6 and Qt are not vendored in this repository. See
-`viewer/THIRD_PARTY_NOTICES.md` for dependency license notes.
+See [viewer/README.md](viewer/README.md) for installation, security notes, and usage.
 
 ## Documentation
 
@@ -283,5 +278,6 @@ PySide6 and Qt are not vendored in this repository. See
 - [JSONL Format](docs/jsonl-format.md)
 - [IPC Protocol](docs/ipc-protocol.md)
 - [IPC Event Stream Validation](docs/validation/ipc-event-stream.md)
+- [Viewer IPC Validation](docs/validation/viewer-ipc.md)
 - [Viewer JSONL Log Validation](docs/validation/viewer-jsonl-log.md)
 - [Validation Guides](docs/validation/)

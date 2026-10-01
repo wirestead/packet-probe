@@ -2,149 +2,85 @@
 
 ## Purpose
 
-Validate that Packet Probe Viewer can connect to a Packet Probe IPC event stream
-and display events.
+Validate that the browser viewer (`packet-probe-web`) can start a capture through
+the engine, show live events, and send data.
 
 ## Requirements
 
-- Python 3.10+
-- PySide6
-- wirestead-python (with wirestead core runtime libraries)
 - Built `packet-probe`
+- Python 3.10+ with `wirestead-python` and the viewer installed (see
+  [viewer/README.md](../../viewer/README.md))
+- A browser
 
-Packet Probe Viewer uses `wirestead-python` `UdsClient` for live IPC connections.
+## Launch and capture (UDP)
 
-## Install viewer
+1. Start the gateway:
+
+   ```sh
+   packet-probe-web
+   ```
+
+   Open the printed `http://127.0.0.1:8080/?token=...` URL.
+
+2. In the left panel choose **UDP**, bind `127.0.0.1` port `19000`, leave the
+   send-to target empty, and click **Start capture**.
+
+3. Send a test datagram:
+
+   ```sh
+   python3 - <<'PY'
+   import socket
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
+   PY
+   ```
+
+### Expected results
+
+* The app bar shows `engine connected` and `Capturing · udp`.
+* The table shows an RX `raw_bytes` event of 6 bytes (and its `frame` event).
+* Selecting the row shows the payload in the Hex, Text, and JSON tabs.
+* **Stop** returns the state to `Idle`; **Start capture** works again without
+  restarting the gateway.
+
+### Additional checks
+
+- Pause, send datagrams, then Resume: the held events appear.
+- Clear empties the table and the detail panel.
+- Open the same URL in a second browser tab: both show the same events and state.
+- Open the URL without `?token=`: the page reports the missing token and receives
+  no events.
+- Stop the gateway with Ctrl+C: the spawned `packet-probe engine` exits too.
+- Start a second gateway on a port already in use: it exits with
+  `cannot listen on ...` and does not leave an engine running.
+
+## Send validation (TCP client)
+
+1. Start a TCP echo server on port 19100 (e.g. `python3 mock_device.py --mode tcp --port 19100`
+   or `ncat -l 19100 -k --exec /bin/cat`).
+2. In the viewer choose **TCP Client**, host `127.0.0.1` port `19100`, and click
+   **Start capture**.
+3. In **Send**, choose **Hex**, enter `AA BB CC`, and click **Send**.
+
+### Expected results
+
+* A TX `raw_bytes` event of 3 bytes appears, followed by the echoed RX event.
+* The message area reports `Sent 3 bytes`.
+
+### Additional checks
+
+- In **TCP Proxy** mode the Send button is disabled.
+- In **UDP** mode without a send-to target the Send button is disabled; with a
+  target set, Send works.
+
+## Attach to a running engine
 
 ```sh
-cd viewer
-python -m pip install -e .
+packet-probe engine --ipc tcp:127.0.0.1:19500
+packet-probe-web --ipc tcp:127.0.0.1:19500
 ```
 
-## Existing socket validation
-
-### Steps
-
-1. Start Packet Probe manually:
-
-   ```sh
-   packet-probe udp \
-     --bind-host 127.0.0.1 \
-     --bind-port 19000 \
-     --ipc /tmp/packet-probe.sock \
-     --log udp.jsonl
-   ```
-
-2. Start the viewer:
-
-   ```sh
-   packet-probe-viewer --socket /tmp/packet-probe.sock
-   ```
-
-3. Send a test UDP datagram:
-
-   ```sh
-   python3 - <<'PY'
-   import socket
-   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-   s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
-   PY
-   ```
-
 ### Expected results
 
-* The socket path field displays `/tmp/packet-probe.sock` without being overwritten by an auto-generated path.
-* Viewer status changes to connected.
-* Event table shows a `device_to_app` raw_bytes event.
-* Selecting the row updates the Hex tab and JSON tab.
-
-### Additional checks
-
-- Start the viewer before Packet Probe and click Connect. The viewer should show a connection error and remain usable.
-- Start Packet Probe, connect the viewer, then stop Packet Probe. The viewer should switch to disconnected state.
-- Click Pause, send datagrams, then click Resume. Buffered events should appear.
-- Click Clear. The table, hex view, and detail view should be cleared.
-- Try connecting to a missing socket path repeatedly. The viewer should show connection errors and remain usable.
-- Connect to a running Packet Probe IPC socket, click Disconnect, then Connect again. The viewer should reconnect without restarting.
-- Close the viewer window while connected. The window should close without hanging.
-
-## Send command validation
-
-### Steps
-
-1. Start Packet Probe in tcp-client mode with IPC:
-
-   ```sh
-   packet-probe tcp-client \
-     --host 127.0.0.1 \
-     --port 19100 \
-     --ipc /tmp/packet-probe.sock \
-     --log tcp.jsonl
-   ```
-
-   (Start a TCP echo server on port 19100 first, e.g. `ncat -l 19100 -k`.)
-
-2. Start the viewer:
-
-   ```sh
-   packet-probe-viewer --socket /tmp/packet-probe.sock
-   ```
-
-3. Enter a hex payload in the Send Message panel, e.g. `AABBCC`.
-4. Click `Send`.
-
-### Expected results
-
-* The CLI receives the hex payload and sends it to the connected TCP server.
-* A `app_to_device` raw_bytes event appears in the viewer event table.
-* The Hex tab and JSON tab update when the event row is selected.
-* No errors appear in the Process Log.
-
-### Additional checks
-
-- Try sending from an unsupported mode (tcp-proxy). The send panel should be disabled or the command silently ignored.
-- Send while disconnected from IPC. The viewer should show no error and not hang.
-
-## Launcher validation
-
-### Steps
-
-1. Start the viewer without any argument:
-
-   ```sh
-   packet-probe-viewer
-   ```
-
-2. Set CLI Path to the built `packet-probe` executable.
-3. Enter capture arguments:
-
-   ```text
-   udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
-   ```
-
-4. Click `Start Capture`.
-5. Send a test UDP datagram:
-
-   ```sh
-   python3 - <<'PY'
-   import socket
-   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-   s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
-   PY
-   ```
-
-### Expected results
-
-* When clicking `Start Capture`, the viewer generates an IPC socket path and updates the Socket Path field.
-* Process output from the CLI process appears in the Process Log tab (without empty `[stdout]` or `[stderr]` prefixes).
-* The viewer automatically attempts to connect to the generated IPC socket and succeeds (using the retry loop).
-* UDP events appear in the table.
-* Selecting an event updates the Hex tab and JSON tab.
-* Clicking `Stop Capture` terminates the process.
-
-### Additional checks
-
-- Stop Capture: Verify that capture retries are halted immediately when `Stop Capture` is clicked or the process stops.
-- Start Failure: Try to start capture with an invalid executable path. Verify that UI controls (e.g. Start Capture button) are properly restored when the process fails to start.
-- IPC Argument rejection: Try to include `--ipc` or `--ipc=value` in the capture arguments. Verify that the viewer displays a warning dialog and refuses to start the capture.
-
+* The viewer reflects the engine's current state (idle or capturing) on load.
+* Stopping the gateway does not stop the engine it attached to.

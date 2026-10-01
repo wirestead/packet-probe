@@ -13,6 +13,7 @@ messages relayed).
 import argparse
 import itertools
 import json
+import os
 import queue
 import secrets
 import signal
@@ -26,8 +27,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import wirestead
-
-from .capture_command import find_packet_probe_binary
 
 INDEX_HTML = Path(__file__).parent / "web" / "index.html"
 CLIENT_QUEUE_MAX = 10000
@@ -217,6 +216,39 @@ def make_handler(link: EngineLink, token: str):
 
     return Handler
 
+
+def find_packet_probe_binary() -> str:
+    # 1. Check environment variable
+    env_path = os.environ.get("PACKET_PROBE_CLI")
+    if env_path:
+        return env_path
+
+    # 2. Check workspace build directory relative to this file
+    try:
+        current_dir = Path(__file__).resolve().parent
+        workspace_root = current_dir.parents[1]
+        build_root = workspace_root / "build"
+        exe_name = "packet-probe.exe" if os.name == "nt" else "packet-probe"
+
+        candidates = [
+            build_root / "packet-probe",
+            build_root / "apps" / "packet-probe-cli" / "packet-probe",
+            build_root / exe_name,
+            build_root / "apps" / "packet-probe-cli" / exe_name,
+        ]
+        # Multi-config generators (MSVC/Ninja Multi-Config) place binaries
+        # under a per-configuration subdirectory instead of build/ directly.
+        for config in ("Debug", "Release", "RelWithDebInfo", "MinSizeRel"):
+            candidates.append(build_root / config / exe_name)
+            candidates.append(build_root / "apps" / "packet-probe-cli" / config / exe_name)
+
+        for candidate in candidates:
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return str(candidate)
+    except Exception:
+        pass
+
+    return "packet-probe"
 
 def _free_loopback_port() -> int:
     # ponytail: the port can be taken between close() and the engine's bind; fine
