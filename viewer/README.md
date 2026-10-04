@@ -46,6 +46,8 @@ This spawns `packet-probe engine --ipc tcp:127.0.0.1:<free port>` and prints the
 to open, e.g. `http://127.0.0.1:8080/?token=...`. Stopping the gateway (Ctrl+C or
 SIGTERM) stops that engine too. The `packet-probe` executable is found through
 `PACKET_PROBE_CLI`, a sibling `build/` directory, or `PATH`; `--cli` overrides it.
+If it cannot be found the gateway exits with a hint instead of starting; if the
+engine exits later, the console and the page both report its exit code.
 
 Options:
 

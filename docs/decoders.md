@@ -50,7 +50,9 @@ until enough bytes arrive.
 ```
 
 Splits the stream whenever the delimiter appears. Delimiters are included in frame
-payloads by default. `--include-delimiter` is accepted for explicitness.
+payloads by default; use `--no-include-delimiter` to strip them. `--include-delimiter`
+is accepted for explicitness. The web viewer's "Keep delimiter in frame" box has the
+same default.
 
 ### Length Prefix
 
@@ -79,7 +81,7 @@ packet-probe tcp-client --host 127.0.0.1 --port 9000 \
 
 ```sh
 packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 \
-  --decoder raw --log udp.jsonl --hex
+  --decoder raw --log udp.jsonl
 ```
 
 ## Limitations

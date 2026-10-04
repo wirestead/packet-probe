@@ -56,6 +56,11 @@ int main() {
   assert(packet_probe::parse_serial_baudrate("115200") == 115200);
   assert(throws_invalid_argument([] { packet_probe::parse_serial_baudrate("0"); }));
   assert(throws_invalid_argument([] { packet_probe::parse_serial_baudrate("fast"); }));
+  try {
+    (void)packet_probe::parse_serial_baudrate("fast");
+  } catch (std::invalid_argument const& ex) {
+    assert(std::string(ex.what()).find("--baudrate") != std::string::npos);
+  }
 
   return 0;
 }

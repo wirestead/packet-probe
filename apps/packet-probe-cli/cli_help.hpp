@@ -7,6 +7,7 @@
 namespace packet_probe::cli {
 
 void print_help(std::ostream& out);
+void print_tcp_client_help(std::ostream& out);
 void print_tcp_server_help(std::ostream& out);
 void print_tcp_proxy_help(std::ostream& out);
 void print_serial_help(std::ostream& out);

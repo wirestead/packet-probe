@@ -16,6 +16,7 @@ import json
 import os
 import queue
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -41,6 +42,7 @@ class EngineLink:
     def __init__(self, address: str):
         self.address = address
         self.connected = False
+        self.engine_exit_code: int | None = None
         self._lock = threading.Lock()
         self._client = None
         self._subscribers: set[queue.Queue] = set()
@@ -81,11 +83,22 @@ class EngineLink:
                 self._set_connected(False)
             time.sleep(1.0)
 
+    def engine_exited(self, returncode: int) -> None:
+        """Tells browsers the spawned engine is gone, so they show why instead of retrying silently."""
+        self.engine_exit_code = returncode
+        self._publish(json.dumps(self._gateway_state()))
+
+    def _gateway_state(self) -> dict:
+        state = {"type": "gateway", "engine_connected": self.connected}
+        if self.engine_exit_code is not None:
+            state["engine_exit_code"] = self.engine_exit_code
+        return state
+
     def _set_connected(self, value: bool) -> None:
         if self.connected == value:
             return
         self.connected = value
-        self._publish(json.dumps({"type": "gateway", "engine_connected": value}))
+        self._publish(json.dumps(self._gateway_state()))
 
     def _on_message(self, ctx) -> None:
         line = bytes(ctx.data).decode("utf-8", errors="replace")
@@ -114,7 +127,7 @@ class EngineLink:
         q: queue.Queue = queue.Queue(CLIENT_QUEUE_MAX)
         with self._lock:
             self._subscribers.add(q)
-        q.put_nowait(json.dumps({"type": "gateway", "engine_connected": self.connected}))
+        q.put_nowait(json.dumps(self._gateway_state()))
         return q
 
     def unsubscribe(self, q: queue.Queue) -> None:
@@ -250,6 +263,26 @@ def find_packet_probe_binary() -> str:
 
     return "packet-probe"
 
+
+def resolve_cli(cli: str) -> str | None:
+    """Returns an executable path for `cli` (a path or a name on PATH), or None."""
+    if os.path.dirname(cli):
+        for candidate in (cli, cli + ".exe") if os.name == "nt" else (cli,):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        return None
+    return shutil.which(cli)
+
+
+def _watch_engine(engine: subprocess.Popen, link: EngineLink, stopping: threading.Event) -> None:
+    code = engine.wait()
+    if stopping.is_set():
+        return  # the gateway itself is shutting the engine down
+    print(f"packet-probe-web: engine exited with code {code}; restart packet-probe-web to recover",
+          file=sys.stderr, flush=True)
+    link.engine_exited(code)
+
+
 def _free_loopback_port() -> int:
     # ponytail: the port can be taken between close() and the engine's bind; fine
     # for a local tool, pass --ipc explicitly if it ever collides.
@@ -286,9 +319,23 @@ def main(argv: list[str] | None = None) -> int:
     server.daemon_threads = True
 
     engine = None
+    stopping = threading.Event()
     if not args.ipc:
-        cli = args.cli or find_packet_probe_binary()
-        engine = subprocess.Popen([cli, "engine", "--ipc", address])
+        requested = args.cli or find_packet_probe_binary()
+        cli = resolve_cli(requested)
+        if cli is None:
+            server.server_close()
+            print(f"packet-probe-web: cannot find the packet-probe executable ({requested!r}).\n"
+                  "  Build it (cmake --build build), then pass --cli <path> or set PACKET_PROBE_CLI,\n"
+                  "  or attach to a running engine with --ipc <address>.", file=sys.stderr)
+            return 1
+        try:
+            engine = subprocess.Popen([cli, "engine", "--ipc", address])
+        except OSError as exc:
+            server.server_close()
+            print(f"packet-probe-web: cannot start {cli}: {exc}", file=sys.stderr)
+            return 1
+        threading.Thread(target=_watch_engine, args=(engine, link, stopping), name="engine-watch", daemon=True).start()
     link.start()
 
     shown_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
@@ -307,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         server.server_close()
         if engine is not None:
+            stopping.set()
             engine.terminate()
             try:
                 engine.wait(3)

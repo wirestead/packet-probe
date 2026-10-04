@@ -7,11 +7,24 @@
 
 namespace packet_probe::cli {
 
-std::uint16_t parse_port(std::string const& value) {
+unsigned long parse_number(std::string const& option, std::string const& value) {
   std::size_t parsed = 0;
-  auto port = std::stoul(value, &parsed, 10);
-  if (parsed != value.size() || port == 0 || port > 65535) {
-    throw std::invalid_argument("invalid --port value: " + value);
+  unsigned long number = 0;
+  try {
+    number = std::stoul(value, &parsed, 10);
+  } catch (std::logic_error const&) {
+    parsed = 0;
+  }
+  if (value.empty() || parsed != value.size() || value[0] == '-' || value[0] == '+') {
+    throw std::invalid_argument("invalid " + option + " value: '" + value + "' (expected a number)");
+  }
+  return number;
+}
+
+std::uint16_t parse_port(std::string const& value, std::string const& option) {
+  auto const port = parse_number(option, value);
+  if (port == 0 || port > 65535) {
+    throw std::invalid_argument("invalid " + option + " value: " + value + " (expected 1-65535)");
   }
   return static_cast<std::uint16_t>(port);
 }
@@ -25,11 +38,15 @@ CliOptions parse_args(int argc, char** argv) {
     } else if (arg == "--version") {
       options.version = true;
     } else if (arg == "--hex" || arg == "--hex-raw") {
-      options.hex_raw = true;
+      // Raw byte lines are printed by default now; kept so existing scripts still parse.
+    } else if (arg == "--quiet" || arg == "-q") {
+      options.quiet = true;
     } else if (arg == "--hex-frame") {
       options.hex_frame = true;
     } else if (arg == "--latency") {
       options.latency = true;
+    } else if (arg == "--no-latency") {
+      options.latency = false;
     } else if (parse_send_option(options, arg, i, argc, argv)) {
     } else if (parse_decoder_option(options, arg, i, argc, argv)) {
     } else if (arg == "--host") {
@@ -80,7 +97,7 @@ CliOptions parse_args(int argc, char** argv) {
       if (++i >= argc) {
         throw std::invalid_argument("--listen-port requires a value");
       }
-      options.listen_port = parse_port(argv[i]);
+      options.listen_port = parse_port(argv[i], "--listen-port");
     } else if (arg == "--bind-host") {
       if (++i >= argc) {
         throw std::invalid_argument("--bind-host requires a value");
@@ -90,7 +107,7 @@ CliOptions parse_args(int argc, char** argv) {
       if (++i >= argc) {
         throw std::invalid_argument("--bind-port requires a value");
       }
-      options.bind_port = parse_port(argv[i]);
+      options.bind_port = parse_port(argv[i], "--bind-port");
     } else if (arg == "--target-host") {
       if (++i >= argc) {
         throw std::invalid_argument("--target-host requires a value");
@@ -100,7 +117,7 @@ CliOptions parse_args(int argc, char** argv) {
       if (++i >= argc) {
         throw std::invalid_argument("--target-port requires a value");
       }
-      options.target_port = parse_port(argv[i]);
+      options.target_port = parse_port(argv[i], "--target-port");
     } else if (arg == "--log") {
       if (++i >= argc) {
         throw std::invalid_argument("--log requires a value");
@@ -119,6 +136,8 @@ CliOptions parse_args(int argc, char** argv) {
       throw std::invalid_argument("unexpected argument: " + arg);
     }
   }
+  // The engine is driven over IPC and stays silent; capture modes show traffic unless --quiet.
+  options.hex_raw = options.mode != "engine" && !options.quiet;
   return options;
 }
 
@@ -188,7 +207,11 @@ void validate_options(CliOptions const& options) {
     }
     return;
   }
-  throw std::invalid_argument("unknown or missing mode: " + options.mode);
+  auto const modes = std::string(" (expected tcp-client, tcp-server, tcp-proxy, serial, udp, or engine)");
+  if (options.mode.empty()) {
+    throw std::invalid_argument("missing mode" + modes);
+  }
+  throw std::invalid_argument("unknown mode: " + options.mode + modes);
 }
 
 }  // namespace packet_probe::cli

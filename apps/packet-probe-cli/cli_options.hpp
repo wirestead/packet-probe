@@ -30,14 +30,18 @@ struct CliOptions {
   DecoderConfig decoder_config;
   SendInputOptions send_options;
   int send_option_count = 0;
-  bool hex_raw = false;
+  bool hex_raw = false;  // parse_args() turns this on for capture modes unless --quiet
+  bool quiet = false;
   bool hex_frame = false;
   bool latency = true;
   bool help = false;
   bool version = false;
 };
 
-std::uint16_t parse_port(std::string const& value);
+// Parses a base-10 unsigned number for `option`, reporting the option name instead of
+// the raw std::stoul error on bad input.
+unsigned long parse_number(std::string const& option, std::string const& value);
+std::uint16_t parse_port(std::string const& value, std::string const& option = "--port");
 CliOptions parse_args(int argc, char** argv);
 void validate_options(CliOptions const& options);
 

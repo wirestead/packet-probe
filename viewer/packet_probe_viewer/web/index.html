@@ -289,7 +289,7 @@ const MODE_HINTS = {
 const DECODER_FIELDS = {
   "raw": [],
   "fixed": [["frame_size", "Frame size (bytes)", "16", true]],
-  "delimiter": [["delimiter_hex", "Delimiter (hex)", "0A", true], ["include_delimiter", "Keep delimiter in frame", false]],
+  "delimiter": [["delimiter_hex", "Delimiter (hex)", "0A", true], ["include_delimiter", "Keep delimiter in frame", true]],
   "length-prefix": [["length_size", "Length bytes", "2"], ["length_endian", "Endian", "big"],
                     ["length_includes_header", "Length includes header", false]],
 };
@@ -622,6 +622,9 @@ stream.onmessage = (e) => {
   if (msg.type === "gateway") {
     setLink(msg.engine_connected);
     if (msg.engine_connected) syncStatus(); else applyState("disconnected");
+    if (msg.engine_exit_code !== undefined) {
+      setMessage(`Engine exited (code ${msg.engine_exit_code}); see the packet-probe-web console and restart it`, true);
+    }
   } else if (msg.type === "status") {
     applyState(msg.engine_state, msg.config);
   } else if (msg.type !== "metadata") {

@@ -17,8 +17,7 @@ Start the TCP server and listen on `127.0.0.1:19000`:
 packet-probe tcp-server \
   --listen-host 127.0.0.1 \
   --listen-port 19000 \
-  --log tcp-server.jsonl \
-  --hex
+  --log tcp-server.jsonl
 ```
 
 ### Send-Text Example
@@ -34,8 +33,7 @@ echo "02 90 00 91" | packet-probe tcp-server \
   --listen-host 127.0.0.1 \
   --listen-port 19000 \
   --send-hex \
-  --log tcp-server.jsonl \
-  --hex
+  --log tcp-server.jsonl
 ```
 
 ## Test Client Connection
@@ -59,8 +57,7 @@ If you want to send a file using `--send-file`, the file is sent immediately upo
 packet-probe tcp-server \
   --listen-host 127.0.0.1 \
   --listen-port 19000 \
-  --send-file command.bin \
-  --hex
+  --send-file command.bin
 ```
 
 > [!WARNING]

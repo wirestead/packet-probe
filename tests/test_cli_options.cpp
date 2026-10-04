@@ -104,5 +104,42 @@ int main() {
   assert(tcp_server_ipc.ipc_path == "/tmp/packet-probe.sock");
   packet_probe::cli::validate_options(tcp_server_ipc);
 
+  // Raw byte lines print by default for capture modes; --quiet turns them off, engine stays silent.
+  assert(defaults.hex_raw);
+  assert(parse({"packet-probe", "tcp-client", "--host", "h", "--port", "9000", "--hex"}).hex_raw);
+  assert(!parse({"packet-probe", "tcp-client", "--host", "h", "--port", "9000", "--quiet"}).hex_raw);
+  assert(!parse({"packet-probe", "tcp-client", "-q", "--host", "h", "--port", "9000"}).hex_raw);
+  assert(!parse({"packet-probe", "engine", "--ipc", "/tmp/pp.sock"}).hex_raw);
+
+  assert(!parse({"packet-probe", "tcp-proxy", "--no-latency"}).latency);
+
+  auto delimiter = parse({"packet-probe", "serial", "--decoder", "delimiter", "--delimiter", "LF"});
+  assert(delimiter.decoder_config.include_delimiter);
+  delimiter = parse({"packet-probe", "serial", "--decoder", "delimiter", "--no-include-delimiter"});
+  assert(!delimiter.decoder_config.include_delimiter);
+
+  // Bad numbers name the option instead of surfacing std::stoul's message.
+  auto error_message = [](std::initializer_list<char const*> args) -> std::string {
+    try {
+      auto options = parse(args);
+      packet_probe::cli::validate_options(options);
+    } catch (std::invalid_argument const& ex) {
+      return ex.what();
+    }
+    return {};
+  };
+  assert(error_message({"packet-probe", "tcp-client", "--host", "h", "--port", "abc"}).find("--port") !=
+         std::string::npos);
+  assert(error_message({"packet-probe", "tcp-server", "--listen-port", "99999"}).find("--listen-port") !=
+         std::string::npos);
+  assert(error_message({"packet-probe", "udp", "--bind-port", "0"}).find("--bind-port") != std::string::npos);
+  assert(error_message({"packet-probe", "udp", "--target-port", "-1"}).find("--target-port") != std::string::npos);
+  assert(error_message({"packet-probe", "serial", "--frame-size", "x"}).find("--frame-size") != std::string::npos);
+  assert(error_message({"packet-probe", "serial", "--length-size", ""}).find("--length-size") != std::string::npos);
+  assert(error_message({"packet-probe", "tcp-client", "--port", "99999999999999999999"}).find("--port") !=
+         std::string::npos);
+  assert(error_message({"packet-probe", "--quiet"}).find("missing mode") != std::string::npos);
+  assert(error_message({"packet-probe", "foo"}).find("unknown mode: foo") != std::string::npos);
+
   return 0;
 }

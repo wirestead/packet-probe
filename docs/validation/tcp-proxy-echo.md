@@ -35,9 +35,7 @@ packet-probe tcp-proxy \
   --listen-port 19099 \
   --target-host 127.0.0.1 \
   --target-port 19100 \
-  --log tcp-proxy.jsonl \
-  --hex \
-  --latency
+  --log tcp-proxy.jsonl
 ```
 
 In another terminal:

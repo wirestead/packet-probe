@@ -31,8 +31,7 @@ echo "02 10 01 00 03 A7" | packet-probe udp \
   --target-host 127.0.0.1 \
   --target-port 19106 \
   --send-hex \
-  --log udp.jsonl \
-  --hex
+  --log udp.jsonl
 ```
 
 ## Expected Stdout

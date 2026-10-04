@@ -16,7 +16,7 @@ The command prints two PTY paths, for example `/dev/pts/3` and `/dev/pts/4`.
 Run Packet Probe on one side:
 
 ```sh
-packet-probe serial --port /dev/pts/3 --baudrate 115200 --log serial.jsonl --hex
+packet-probe serial --port /dev/pts/3 --baudrate 115200 --log serial.jsonl
 ```
 
 From another terminal, write bytes to the peer:
@@ -39,7 +39,7 @@ on the peer PTY.
 Use a physical COM loopback adapter or a virtual COM pair tool. Run:
 
 ```sh
-packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
+packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl
 ```
 
 Validation criteria are the same as Linux:
