@@ -110,6 +110,7 @@ int main() {
   assert(!parse({"packet-probe", "tcp-client", "--host", "h", "--port", "9000", "--quiet"}).hex_raw);
   assert(!parse({"packet-probe", "tcp-client", "-q", "--host", "h", "--port", "9000"}).hex_raw);
   assert(!parse({"packet-probe", "engine", "--ipc", "/tmp/pp.sock"}).hex_raw);
+  assert(parse({"packet-probe", "serial", "--ascii"}).ascii);
 
   assert(!parse({"packet-probe", "tcp-proxy", "--no-latency"}).latency);
 
@@ -140,6 +141,25 @@ int main() {
          std::string::npos);
   assert(error_message({"packet-probe", "--quiet"}).find("missing mode") != std::string::npos);
   assert(error_message({"packet-probe", "foo"}).find("unknown mode: foo") != std::string::npos);
+  assert(error_message({"packet-probe", "list-serial-ports"}).empty());
+
+  // Options the mode or decoder ignores produce warnings, not errors.
+  using packet_probe::cli::ignored_option_warnings;
+  auto udp_baud = parse({"packet-probe", "udp", "--bind-port", "9000", "--baudrate", "9600"});
+  auto warnings = ignored_option_warnings(udp_baud);
+  assert(warnings.size() == 1 && warnings[0] == "--baudrate is ignored in udp mode");
+  assert(ignored_option_warnings(parse({"packet-probe", "tcp-proxy", "--listen-host", "h", "--listen-port", "1",
+                                        "--target-host", "h", "--target-port", "2", "--send-hex"}))
+             .size() == 1);
+  warnings = ignored_option_warnings(parse({"packet-probe", "serial", "--port", "/dev/x", "--frame-size", "8"}));
+  assert(warnings.size() == 1 && warnings[0] == "--frame-size is ignored unless --decoder fixed");
+  assert(ignored_option_warnings(parse({"packet-probe", "serial", "--port", "/dev/x", "--decoder", "Fixed",
+                                        "--frame-size", "8", "--parity", "odd", "-q"}))
+             .empty());
+  assert(ignored_option_warnings(parse({"packet-probe", "engine", "--ipc", "x", "--log", "a.jsonl"})).size() == 1);
+  assert(ignored_option_warnings(parse({"packet-probe", "tcp-client", "--host", "h", "--port", "1", "--latency",
+                                        "--latency"}))
+             .size() == 1);
 
   return 0;
 }

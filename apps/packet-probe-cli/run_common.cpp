@@ -24,10 +24,14 @@ std::vector<std::uint8_t> parse_send_line(std::string const& line, SendInputOpti
   throw std::logic_error("send-file does not parse stdin lines");
 }
 
-void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled) {
+void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled, bool ascii) {
   if (event.type == EventType::RawBytes && hex_raw_enabled) {
     auto direction = event.direction == Direction::AppToDevice ? "APP -> DEVICE" : "DEVICE -> APP";
-    std::cout << format_event_line(event.timestamp_ns, direction, event.payload.size(), event.payload) << '\n';
+    std::cout << format_event_line(event.timestamp_ns, direction, event.payload.size(), event.payload);
+    if (ascii && !event.payload.empty()) {
+      std::cout << "  |" << to_ascii(event.payload) << '|';
+    }
+    std::cout << '\n';
     return;
   }
 
@@ -38,6 +42,9 @@ void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_
     auto const hex = to_hex(event.payload, true);
     if (!hex.empty()) {
       std::cout << "  " << hex;
+    }
+    if (ascii && !event.payload.empty()) {
+      std::cout << "  |" << to_ascii(event.payload) << '|';
     }
     std::cout << '\n';
     return;
@@ -79,13 +86,14 @@ EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, 
   (void)create_frame_decoder(options.decoder_config);
   auto const hex_raw = options.hex_raw;
   auto const hex_frame = options.hex_frame;
+  auto const ascii = options.ascii;
   return EventPipeline(make_frame_decoder_factory(options.decoder_config),
-                       [&recorder, ipc_server, hex_raw, hex_frame](PacketEvent const& event) {
+                       [&recorder, ipc_server, hex_raw, hex_frame, ascii](PacketEvent const& event) {
     recorder.record(event);
     if (ipc_server != nullptr) {
       ipc_server->broadcast(event);
     }
-    print_event(event, hex_raw, hex_frame);
+    print_event(event, hex_raw, hex_frame, ascii);
   }, std::move(seq_alloc));
 }
 
