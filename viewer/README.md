@@ -18,18 +18,17 @@ not restart the engine process.
 
 The gateway needs `wirestead-python` (import name `wirestead`). It is published as
 wheels on the [wirestead-python releases](https://github.com/wirestead/wirestead-python/releases),
-not on PyPI:
+not on PyPI; `--find-links` lets pip pick the wheel for your Python and platform:
 
 ```sh
-gh release download v0.9.6 -R wirestead/wirestead-python -p "wirestead-0.9.6-cp312-cp312-*<platform>*.whl"
-python -m pip install wirestead-*.whl
-
-cd viewer
-python -m pip install -e .
+python -m pip install --only-binary wirestead \
+  --find-links https://github.com/wirestead/wirestead-python/releases/expanded_assets/v0.9.6 \
+  -e viewer
 ```
 
-`<platform>` is e.g. `manylinux_2_27_x86_64`, `win_amd64`, or `macosx_15_0_arm64`. For
-local development against a sibling `wirestead` checkout you can instead build it:
+Wheels exist for CPython 3.10-3.13 on Linux (x86_64, aarch64), macOS (arm64), and
+Windows (x64). For local development against a sibling `wirestead` checkout you can
+instead build it:
 
 ```sh
 python -m pip install -e ../wirestead-python \

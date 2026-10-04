@@ -27,7 +27,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import wirestead
+try:
+    import wirestead
+except ImportError:  # main() explains how to install it
+    wirestead = None
+
+WIRESTEAD_INSTALL_HINT = (
+    "python -m pip install --only-binary wirestead --find-links "
+    "https://github.com/wirestead/wirestead-python/releases/expanded_assets/v0.9.6 wirestead"
+)
 
 INDEX_HTML = Path(__file__).parent / "web" / "index.html"
 CLIENT_QUEUE_MAX = 10000
@@ -305,6 +313,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    if wirestead is None:
+        print(f"packet-probe-web: the wirestead package is missing. Install it with\n  {WIRESTEAD_INSTALL_HINT}",
+              file=sys.stderr)
+        return 1
 
     address = args.ipc or f"tcp:127.0.0.1:{_free_loopback_port()}"
     link = EngineLink(address)
