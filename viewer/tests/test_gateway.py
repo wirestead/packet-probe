@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("wirestead")
 
-from packet_probe_viewer.gateway import EngineLink, make_handler  # noqa: E402
+from packet_probe_viewer.gateway import EngineLink, main, make_handler, resolve_cli  # noqa: E402
 
 
 def _fake_engine(listener: socket.socket) -> None:
@@ -62,3 +62,25 @@ def test_gateway_relays_commands_and_events():
         pass  # readline times out (fails the test) if the event never arrives
 
     server.shutdown()
+
+
+def test_resolve_cli_rejects_missing_executables(tmp_path):
+    assert resolve_cli(str(tmp_path / "no-such-packet-probe")) is None
+    assert resolve_cli("no-such-packet-probe-on-path") is None
+
+
+def test_main_reports_missing_cli_instead_of_crashing(tmp_path, capsys):
+    missing = str(tmp_path / "packet-probe")
+    assert main(["--port", "0", "--cli", missing]) == 1
+    err = capsys.readouterr().err
+    assert "cannot find the packet-probe executable" in err and "--cli" in err
+
+
+def test_engine_exit_is_published_to_browsers():
+    link = EngineLink("tcp:127.0.0.1:1")
+    q = link.subscribe()
+    q.get_nowait()  # initial connection state
+    link.engine_exited(3)
+    assert json.loads(q.get_nowait()) == {"type": "gateway", "engine_connected": False, "engine_exit_code": 3}
+    # A browser that opens the page later still learns why the engine is gone.
+    assert json.loads(link.subscribe().get_nowait())["engine_exit_code"] == 3

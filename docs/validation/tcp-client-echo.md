@@ -29,13 +29,13 @@ while True:
 ## Packet Probe Command
 
 ```sh
-echo "hello" | packet-probe tcp-client --host 127.0.0.1 --port 19000 --send-text --log tcp-client.jsonl --hex
+echo "hello" | packet-probe tcp-client --host 127.0.0.1 --port 19000 --send-text --log tcp-client.jsonl
 ```
 
 Hex input:
 
 ```sh
-echo "02 10 01 00 03 A7" | packet-probe tcp-client --host 127.0.0.1 --port 19000 --send-hex --log tcp-client.jsonl --hex
+echo "02 10 01 00 03 A7" | packet-probe tcp-client --host 127.0.0.1 --port 19000 --send-hex --log tcp-client.jsonl
 ```
 
 ## Expected Stdout

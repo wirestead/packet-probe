@@ -17,9 +17,14 @@ std::string lower(std::string value) {
 
 unsigned long parse_unsigned(std::string const& value, char const* name) {
   std::size_t parsed = 0;
-  auto number = std::stoul(value, &parsed, 10);
-  if (parsed != value.size()) {
-    throw std::invalid_argument(std::string("invalid ") + name + " value: " + value);
+  unsigned long number = 0;
+  try {
+    number = std::stoul(value, &parsed, 10);
+  } catch (std::logic_error const&) {
+    parsed = 0;
+  }
+  if (value.empty() || parsed != value.size() || value[0] == '-' || value[0] == '+') {
+    throw std::invalid_argument(std::string("invalid ") + name + " value: '" + value + "' (expected a number)");
   }
   return number;
 }

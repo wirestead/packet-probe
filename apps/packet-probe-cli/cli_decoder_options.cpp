@@ -18,7 +18,7 @@ bool parse_decoder_option(CliOptions& options, std::string const& arg, int& inde
     if (++index >= argc) {
       throw std::invalid_argument("--frame-size requires a value");
     }
-    options.decoder_config.frame_size = std::stoul(argv[index]);
+    options.decoder_config.frame_size = parse_number("--frame-size", argv[index]);
     return true;
   }
   if (arg == "--delimiter") {
@@ -32,11 +32,15 @@ bool parse_decoder_option(CliOptions& options, std::string const& arg, int& inde
     options.decoder_config.include_delimiter = true;
     return true;
   }
+  if (arg == "--no-include-delimiter") {
+    options.decoder_config.include_delimiter = false;
+    return true;
+  }
   if (arg == "--length-size") {
     if (++index >= argc) {
       throw std::invalid_argument("--length-size requires a value");
     }
-    options.decoder_config.length_size = std::stoul(argv[index]);
+    options.decoder_config.length_size = parse_number("--length-size", argv[index]);
     return true;
   }
   if (arg == "--length-endian") {

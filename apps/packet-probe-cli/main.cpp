@@ -2,6 +2,7 @@
 #include <exception>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 #include "cli_help.hpp"
 #include "cli_options.hpp"
@@ -41,6 +42,18 @@ int run_mode(packet_probe::cli::CliOptions const& options) {
   throw std::invalid_argument("unknown or missing mode: " + options.mode);
 }
 
+// The first argument naming a known mode, so a usage error can point at that mode's help.
+std::string mode_in_args(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    std::string const arg = argv[i];
+    if (arg == "tcp-client" || arg == "tcp-server" || arg == "tcp-proxy" || arg == "serial" || arg == "udp" ||
+        arg == "engine") {
+      return arg;
+    }
+  }
+  return {};
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -62,7 +75,8 @@ int main(int argc, char** argv) {
     return run_mode(options);
   } catch (std::exception const& ex) {
     std::cerr << "packet-probe: " << ex.what() << '\n';
-    std::cerr << "Run 'packet-probe --help' for usage.\n";
+    auto const mode = mode_in_args(argc, argv);
+    std::cerr << "Run 'packet-probe " << (mode.empty() ? "" : mode + " ") << "--help' for usage.\n";
     return 2;
   }
 }

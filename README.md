@@ -61,13 +61,17 @@ cmake --build build -j2
 packet-probe --help
 packet-probe --version
 packet-probe tcp-client --host 127.0.0.1 --port 9000
-packet-probe tcp-client --host 127.0.0.1 --port 9000 --hex
-packet-probe tcp-client --host 127.0.0.1 --port 9000 --log capture.jsonl --hex
-packet-probe tcp-server --listen-host 0.0.0.0 --listen-port 9000 --log tcp-server.jsonl --hex
-packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --hex
-packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
-packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
+packet-probe tcp-client --host 127.0.0.1 --port 9000 --quiet --log capture.jsonl
+packet-probe tcp-server --listen-host 0.0.0.0 --listen-port 9000 --log tcp-server.jsonl
+packet-probe serial --port /dev/ttyUSB0 --baudrate 115200
+packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl
+packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl
 ```
+
+Every received and sent byte event is printed as one hex line, for example
+`[12:00:00.123456] DEVICE -> APP 6 bytes  02 10 01 00 03 A7`. Use `--quiet` (`-q`)
+to only record to `--log`/`--ipc`. `packet-probe <mode> --help` lists every option
+of a mode.
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
 recorded as TX events. Bytes received from the target are recorded as RX events.
@@ -79,15 +83,13 @@ echo "02 10 01 00 03 A7" | packet-probe serial \
   --port /dev/ttyUSB0 \
   --baudrate 115200 \
   --send-hex \
-  --log serial.jsonl \
-  --hex
+  --log serial.jsonl
 
 packet-probe serial \
   --port /dev/ttyUSB0 \
   --baudrate 115200 \
   --send-file command.bin \
-  --log serial.jsonl \
-  --hex
+  --log serial.jsonl
 ```
 
 IPC event stream example:
@@ -128,8 +130,7 @@ Example:
 packet-probe tcp-server \
   --listen-host 0.0.0.0 \
   --listen-port 9000 \
-  --log tcp-server.jsonl \
-  --hex
+  --log tcp-server.jsonl
 ```
 
 ## TCP Proxy Mode
@@ -148,10 +149,10 @@ packet-probe tcp-proxy \
   --listen-port 9000 \
   --target-host 192.168.0.10 \
   --target-port 9000 \
-  --log capture.jsonl \
-  --hex \
-  --latency
+  --log capture.jsonl
 ```
+
+Heuristic request/response latency events are on by default; `--no-latency` turns them off.
 
 This mode is useful when you want to inspect the actual communication flow between
 an existing application and connected equipment.
@@ -172,8 +173,7 @@ packet-probe tcp-proxy \
   --listen-port 9000 \
   --target-host 127.0.0.1 \
   --target-port 9100 \
-  --log proxy.jsonl \
-  --hex
+  --log proxy.jsonl
 ```
 
 Then connect a test client to `127.0.0.1:9000` while a target echo server is
@@ -186,13 +186,13 @@ Serial Direct Mode connects directly to a serial target device.
 Linux example:
 
 ```sh
-packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --log serial.jsonl --hex
+packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --log serial.jsonl
 ```
 
 Windows example:
 
 ```sh
-packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
+packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl
 ```
 
 Supported serial options:
@@ -213,7 +213,7 @@ UDP Direct Mode binds a UDP socket and records every received datagram, from any
 sender; each event's `source` is the sender's address.
 
 ```sh
-packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
+packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl
 ```
 
 If `--target-host` and `--target-port` are provided, stdin lines are sent as UDP
@@ -234,7 +234,7 @@ packet-probe tcp-client --host 127.0.0.1 --port 9000 \
   --decoder length-prefix --length-size 2 --length-endian big
 ```
 
-`--hex` prints raw byte events. Use `--hex-frame` to also print frame events.
+Raw byte events are printed by default. Use `--hex-frame` to also print frame events.
 Decoder details are documented in [docs/decoders.md](docs/decoders.md).
 
 MessageDecoder extension interface is available as a future extension point.

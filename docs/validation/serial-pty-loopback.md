@@ -23,7 +23,7 @@ Note the two printed PTY paths, for example `/dev/pts/3` and `/dev/pts/4`.
 ## Packet Probe Command
 
 ```sh
-packet-probe serial --port /dev/pts/3 --baudrate 115200 --send-hex --log serial.jsonl --hex
+packet-probe serial --port /dev/pts/3 --baudrate 115200 --send-hex --log serial.jsonl
 ```
 
 In another terminal:

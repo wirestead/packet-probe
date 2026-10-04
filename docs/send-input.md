@@ -59,8 +59,7 @@ packet-probe serial \
   --port /dev/ttyUSB0 \
   --baudrate 115200 \
   --send-file command.bin \
-  --log serial.jsonl \
-  --hex
+  --log serial.jsonl
 ```
 
 ## Transport Behavior
@@ -82,8 +81,7 @@ echo "02 10 01 00 03 A7" | packet-probe serial \
   --port /dev/ttyUSB0 \
   --baudrate 115200 \
   --send-hex \
-  --log serial.jsonl \
-  --hex
+  --log serial.jsonl
 ```
 
 TCP hex command:
@@ -93,8 +91,7 @@ echo "02 10 01 00 03 A7" | packet-probe tcp-client \
   --host 127.0.0.1 \
   --port 9000 \
   --send-hex \
-  --log tcp.jsonl \
-  --hex
+  --log tcp.jsonl
 ```
 
 UDP hex datagram:
@@ -106,8 +103,7 @@ echo "02 10 01 00 03 A7" | packet-probe udp \
   --target-host 127.0.0.1 \
   --target-port 9100 \
   --send-hex \
-  --log udp.jsonl \
-  --hex
+  --log udp.jsonl
 ```
 
 ## Limitations
