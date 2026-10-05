@@ -46,7 +46,7 @@ Packet Probe requires a C++20-capable compiler and Boost (Asio/System), e.g.
 CMake finds wirestead in this order: a source tree at `../wirestead` (or
 `-DPACKET_PROBE_WIRESTEAD_SOURCE_DIR=<path>`), an installed `wirestead` package, and
 otherwise downloads it from GitHub (`-DPACKET_PROBE_WIRESTEAD_GIT_TAG=<ref>`, default
-`main`; `-DPACKET_PROBE_FETCH_WIRESTEAD=OFF` disables the download).
+`v0.10.0`; `-DPACKET_PROBE_FETCH_WIRESTEAD=OFF` disables the download).
 
 ```sh
 cmake -S . -B build

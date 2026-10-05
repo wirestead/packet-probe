@@ -28,7 +28,7 @@ endif()
 option(PACKET_PROBE_FETCH_WIRESTEAD
        "Download wirestead when no local source tree or installed package is found" ON)
 set(PACKET_PROBE_WIRESTEAD_GIT_TAG
-    "main"
+    "v0.10.0"
     CACHE STRING "wirestead git ref downloaded by PACKET_PROBE_FETCH_WIRESTEAD"
 )
 
