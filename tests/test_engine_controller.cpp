@@ -140,11 +140,10 @@ int main() {
 
     std::cerr << "[waiting] raw_bytes ping event" << std::endl;
     bool delivered = false;
+    std::vector<int> send_log;  // -1 accepted, else SendRejection
     for (int attempt = 0; attempt < 20 && !delivered; ++attempt) {
       auto const send_result = sender.send(std::string_view("ping"));
-      std::cerr << "[diag] attempt " << attempt << " send accepted=" << send_result.accepted();
-      if (!send_result.accepted()) std::cerr << " reason=" << static_cast<int>(send_result.reason());
-      std::cerr << std::endl;
+      send_log.push_back(send_result.accepted() ? -1 : static_cast<int>(send_result.reason()));
       auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
       while (std::chrono::steady_clock::now() < deadline) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -160,7 +159,9 @@ int main() {
     }
     if (!delivered) {
       std::lock_guard<std::mutex> lock(mutex);
-      std::cerr << "[diag] " << messages.size() << " messages seen:" << std::endl;
+      std::cerr << "[diag] sends:";
+      for (int r : send_log) std::cerr << ' ' << r;
+      std::cerr << std::endl << "[diag] " << messages.size() << " messages seen:" << std::endl;
       for (auto const& msg : messages) std::cerr << "[diag]   " << msg.dump().substr(0, 300) << std::endl;
     }
     TEST_ASSERT(delivered, "raw_bytes ping event");
