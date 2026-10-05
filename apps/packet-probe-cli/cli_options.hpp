@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include "packet_probe/decoder/decoder_config.hpp"
 #include "core/send_input.hpp"
@@ -34,10 +33,8 @@ struct CliOptions {
   bool hex_raw = false;  // parse_args() turns this on for capture modes unless --quiet
   bool quiet = false;
   bool hex_frame = false;
-  bool ascii = false;
   bool latency = true;
   bool help = false;
-  std::vector<std::string> given_options;  // every --option seen, in order
   bool version = false;
 };
 
@@ -47,7 +44,5 @@ unsigned long parse_number(std::string const& option, std::string const& value);
 std::uint16_t parse_port(std::string const& value, std::string const& option = "--port");
 CliOptions parse_args(int argc, char** argv);
 void validate_options(CliOptions const& options);
-// Warnings for options that the selected mode (or decoder) ignores, e.g. --baudrate with udp.
-std::vector<std::string> ignored_option_warnings(CliOptions const& options);
 
 }  // namespace packet_probe::cli

@@ -84,7 +84,6 @@ add_executable(
   test_engine_controller
   test_engine_controller.cpp
   ../apps/packet-probe-cli/engine_controller.cpp
-  ../apps/packet-probe-cli/serial_ports.cpp
   ../apps/packet-probe-cli/engine_config.cpp
   ../apps/packet-probe-cli/run_common.cpp
   ../apps/packet-probe-cli/cli_options.cpp

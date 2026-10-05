@@ -49,9 +49,9 @@ s.close()
 '
 ```
 
-## Send-File
+## Send-File Timing Limitation
 
-`--send-file` waits for the first client to connect, sends the file, and exits:
+If you want to send a file using `--send-file`, the file is sent immediately upon CLI startup:
 
 ```bash
 packet-probe tcp-server \
@@ -60,7 +60,9 @@ packet-probe tcp-server \
   --send-file command.bin
 ```
 
-Stdin lines (`--send-text`, `--send-hex`) are likewise held until a client connects.
+> [!WARNING]
+> For `--send-file`, you must connect the remote client *before* the file payload is sent.
+> TCP server mode currently does not support delayed send-on-connect yet. If a client is not connected when the CLI reads the file, the send fails immediately with an error.
 
 ## Expected Stdout
 

@@ -34,7 +34,7 @@ using StopRequested = std::function<bool()>;
 
 bool stdin_is_terminal();
 std::vector<std::uint8_t> parse_send_line(std::string const& line, SendInputOptions const& send_options);
-void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled, bool ascii = false);
+void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled);
 std::unique_ptr<JsonlRecorder> make_recorder(CliOptions const& options);
 std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options);
 EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server,

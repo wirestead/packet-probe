@@ -63,7 +63,6 @@ int main() {
 
   server_session.start();
   TEST_ASSERT(!server_session.stopped(), "Server session should be running after start()");
-  TEST_ASSERT(!server_session.client_connected(), "No client is connected before one connects");
 
   // 2. Create and start TCP Client session
   packet_probe::TcpDirectCaptureOptions client_options;
@@ -159,7 +158,6 @@ int main() {
 
   // 4. Send message from Server (Device) to Client (App)
   std::cout << "Sending data from Server to Client..." << std::endl;
-  wait_until([&] { return server_session.client_connected(); }, "server reports the connected client");
   std::vector<std::uint8_t> server_payload = {'W', 'o', 'r', 'l', 'd'};
   bool server_sent = server_session.send(server_payload);
   TEST_ASSERT(server_sent, "Server should successfully send payload");

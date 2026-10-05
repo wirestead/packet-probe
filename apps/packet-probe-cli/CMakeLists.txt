@@ -15,7 +15,6 @@ set(PACKET_PROBE_CLI_RUN_SOURCES
     run_udp.cpp
     run_engine.cpp
     engine_controller.cpp
-    serial_ports.cpp
 )
 
 add_executable(packet-probe main.cpp ${PACKET_PROBE_CLI_COMMON_SOURCES} ${PACKET_PROBE_CLI_RUN_SOURCES})

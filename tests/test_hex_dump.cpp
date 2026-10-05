@@ -17,8 +17,5 @@ int main() {
   auto line = packet_probe::format_event_line(1781234567890000000LL, "RX", payload.size(), payload);
   assert(line.find("RX 6 bytes  02 10 01 00 03 A7") != std::string::npos);
 
-  assert(packet_probe::to_ascii({'O', 'K', 0x0D, 0x0A, 0x7F, 0x80, ' '}) == "OK.... ");
-  assert(packet_probe::to_ascii(empty).empty());
-
   return 0;
 }

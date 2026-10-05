@@ -1,6 +1,7 @@
 #include "engine_controller.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 
@@ -15,7 +16,6 @@
 #include "engine_config.hpp"
 #include "packet_probe/ipc/ipc_protocol.hpp"
 #include "run_common.hpp"
-#include "serial_ports.hpp"
 
 namespace packet_probe::cli {
 
@@ -189,7 +189,31 @@ void EngineController::handle_get_status(IpcClientId client_id, std::string cons
 }
 
 void EngineController::handle_list_serial_ports(IpcClientId client_id, std::string const& id) {
-  auto const ports = list_serial_ports();
+  std::vector<std::string> ports;
+  std::error_code ec;
+
+  for (char const* dir : {"/dev/serial/by-id", "/dev"}) {
+    if (!std::filesystem::exists(dir, ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    std::filesystem::directory_iterator it(dir, ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    for (auto const& entry : it) {
+      auto const name = entry.path().filename().string();
+      bool const in_dev_root = std::string(dir) == "/dev";
+      if (in_dev_root && name.rfind("ttyUSB", 0) != 0 && name.rfind("ttyACM", 0) != 0) {
+        continue;
+      }
+      ports.push_back(entry.path().string());
+    }
+  }
+
+  std::sort(ports.begin(), ports.end());
+  ports.erase(std::unique(ports.begin(), ports.end()), ports.end());
 
   nlohmann::json result;
   result["type"] = kIpcMessageTypeResult;

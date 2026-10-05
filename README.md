@@ -75,9 +75,8 @@ packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl
 
 Every received and sent byte event is printed as one hex line, for example
 `[12:00:00.123456] DEVICE -> APP 6 bytes  02 10 01 00 03 A7`. Use `--quiet` (`-q`)
-to only record to `--log`/`--ipc`, or `--ascii` to append each payload's printable
-text (`|AT+OK..|`). `packet-probe <mode> --help` lists every option of a mode; options
-the mode ignores (e.g. `--baudrate` with `udp`) are reported as warnings.
+to only record to `--log`/`--ipc`. `packet-probe <mode> --help` lists every option
+of a mode.
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
 recorded as TX events. Bytes received from the target are recorded as RX events.
@@ -125,8 +124,10 @@ communication session.
 
 TCP server mode currently accepts one client connection per process run.
 
-Send input (stdin lines or `--send-file`) is held until the first client connects,
-so the server can be started before the client.
+Send input is attempted only after the CLI reads stdin or `--send-file`.
+For `--send-file`, a remote client must already be connected when the file payload is sent.
+If you need to send a command after connection, use stdin-based `--send-text` or `--send-hex`,
+or start the client before sending the file.
 
 Example:
 
@@ -198,9 +199,6 @@ Windows example:
 ```sh
 packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl
 ```
-
-`packet-probe list-serial-ports` prints the ports found on this machine
-(`/dev/serial/by-id/*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/cu.*`, or `COMn`).
 
 Supported serial options:
 

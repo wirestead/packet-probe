@@ -19,15 +19,6 @@ std::string to_hex(std::vector<std::uint8_t> const& payload, bool spaced) {
   return out.str();
 }
 
-std::string to_ascii(std::vector<std::uint8_t> const& payload) {
-  std::string out;
-  out.reserve(payload.size());
-  for (auto byte : payload) {
-    out += (byte >= 0x20 && byte < 0x7F) ? static_cast<char>(byte) : '.';
-  }
-  return out;
-}
-
 std::string format_event_line(std::int64_t timestamp_ns, std::string const& direction, std::size_t size,
                               std::vector<std::uint8_t> const& payload) {
   auto const micros_since_epoch = timestamp_ns / 1000;

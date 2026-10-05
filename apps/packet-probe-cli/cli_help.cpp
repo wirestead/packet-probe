@@ -34,7 +34,6 @@ void print_output_options(std::ostream& out, bool latency) {
       << "  --ipc <path>               Broadcast events as JSONL over a Unix Domain Socket\n"
       << "                             (or tcp:127.0.0.1:<port> for TCP loopback)\n"
       << "  -q, --quiet                Do not print raw byte lines (printed by default)\n"
-      << "  --ascii                    Append the printable text of each payload, e.g. |OK..|\n"
       << "  --hex-frame                Also print decoded frame lines\n";
   if (latency) {
     out << "  --no-latency               Turn off heuristic request/response latency events\n";
@@ -58,14 +57,12 @@ void print_help(std::ostream& out) {
       << "  udp           Bind a UDP socket and inspect datagrams\n"
       << "  engine        Start idle and accept configure/start_capture/stop_capture\n"
       << "                commands over IPC (see docs/ipc-protocol.md)\n"
-      << "  list-serial-ports  Print the serial ports found on this machine\n"
       << "\n"
       << "Examples:\n"
       << "  packet-probe tcp-client --host 192.168.0.10 --port 9000\n"
       << "  packet-probe tcp-server --listen-host 0.0.0.0 --listen-port 9000 --log capture.jsonl\n"
       << "  packet-probe tcp-proxy --listen-host 127.0.0.1 --listen-port 9000 \\\n"
       << "                         --target-host 192.168.0.10 --target-port 9000\n"
-      << "  packet-probe list-serial-ports\n"
       << "  packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --decoder delimiter --delimiter LF\n"
       << "  packet-probe udp --bind-port 9000 --target-host 192.168.0.10 --target-port 9000\n"
       << "  echo \"02 10 01 00 03\" | packet-probe serial --port COM3 --baudrate 9600 --send-hex\n"
@@ -120,7 +117,6 @@ void print_serial_help(std::ostream& out) {
       << "\n"
       << "Serial port:\n"
       << "  --port <path>              Serial port path, e.g. /dev/ttyUSB0 or COM3\n"
-      << "                             (packet-probe list-serial-ports shows them)\n"
       << "  --baudrate <rate>          Serial baudrate, e.g. 9600, 115200, 921600\n"
       << "  --data-bits <5|6|7|8>      Data bits, default: 8\n"
       << "  --stop-bits <1|2>          Stop bits, default: 1\n"
