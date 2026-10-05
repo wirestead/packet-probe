@@ -1,5 +1,8 @@
 #include "cli_options.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <initializer_list>
 #include <stdexcept>
 
 #include "cli_decoder_options.hpp"
@@ -33,6 +36,9 @@ CliOptions parse_args(int argc, char** argv) {
   CliOptions options;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
+    if (arg.size() > 1 && arg[0] == '-') {
+      options.given_options.push_back(arg);
+    }
     if (arg == "--help") {
       options.help = true;
     } else if (arg == "--version") {
@@ -41,6 +47,8 @@ CliOptions parse_args(int argc, char** argv) {
       // Raw byte lines are printed by default now; kept so existing scripts still parse.
     } else if (arg == "--quiet" || arg == "-q") {
       options.quiet = true;
+    } else if (arg == "--ascii") {
+      options.ascii = true;
     } else if (arg == "--hex-frame") {
       options.hex_frame = true;
     } else if (arg == "--latency") {
@@ -137,11 +145,14 @@ CliOptions parse_args(int argc, char** argv) {
     }
   }
   // The engine is driven over IPC and stays silent; capture modes show traffic unless --quiet.
-  options.hex_raw = options.mode != "engine" && !options.quiet;
+  options.hex_raw = options.mode != "engine" && options.mode != "list-serial-ports" && !options.quiet;
   return options;
 }
 
 void validate_options(CliOptions const& options) {
+  if (options.mode == "list-serial-ports") {
+    return;
+  }
   if (options.mode == "engine") {
     if (options.ipc_path.empty()) {
       throw std::invalid_argument("engine requires --ipc");
@@ -207,11 +218,93 @@ void validate_options(CliOptions const& options) {
     }
     return;
   }
-  auto const modes = std::string(" (expected tcp-client, tcp-server, tcp-proxy, serial, udp, or engine)");
+  auto const modes = std::string(" (expected tcp-client, tcp-server, tcp-proxy, serial, udp, engine, or list-serial-ports)");
   if (options.mode.empty()) {
     throw std::invalid_argument("missing mode" + modes);
   }
   throw std::invalid_argument("unknown mode: " + options.mode + modes);
+}
+
+namespace {
+
+bool contains(std::initializer_list<char const*> list, std::string const& value) {
+  return std::any_of(list.begin(), list.end(), [&](char const* item) { return value == item; });
+}
+
+}  // namespace
+
+std::vector<std::string> ignored_option_warnings(CliOptions const& options) {
+  std::initializer_list<char const*> const common = {
+      "--help", "--version", "--hex", "--hex-raw", "--quiet", "-q", "--ascii", "--hex-frame", "--log", "--ipc", "--decoder",
+      "--frame-size", "--delimiter", "--include-delimiter", "--no-include-delimiter", "--length-size",
+      "--length-endian", "--length-includes-header"};
+  std::initializer_list<char const*> const send = {"--send-text", "--send-hex", "--send-file"};
+  std::initializer_list<char const*> const serial = {"--port", "--baudrate", "--data-bits", "--stop-bits",
+                                                     "--parity", "--flow-control"};
+
+  auto const& mode = options.mode;
+  auto mode_accepts = [&](std::string const& option) {
+    if (mode == "engine") {
+      return contains({"--help", "--version", "--ipc"}, option);
+    }
+    if (mode == "list-serial-ports") {
+      return contains({"--help", "--version"}, option);
+    }
+    if (contains(common, option)) {
+      return true;
+    }
+    if (mode == "tcp-client") {
+      return contains({"--host", "--port"}, option) || contains(send, option);
+    }
+    if (mode == "tcp-server") {
+      return contains({"--listen-host", "--listen-port"}, option) || contains(send, option);
+    }
+    if (mode == "tcp-proxy") {
+      return contains({"--listen-host", "--listen-port", "--target-host", "--target-port", "--latency",
+                       "--no-latency"},
+                      option);
+    }
+    if (mode == "serial") {
+      return contains(serial, option) || contains(send, option);
+    }
+    if (mode == "udp") {
+      return contains({"--bind-host", "--bind-port", "--target-host", "--target-port"}, option) ||
+             contains(send, option);
+    }
+    return true;  // unknown modes are reported by validate_options()
+  };
+
+  // Decoder sub-options only apply to their own decoder.
+  auto decoder = options.decoder_config.decoder;
+  std::transform(decoder.begin(), decoder.end(), decoder.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  auto decoder_ignores = [&](std::string const& option) -> char const* {
+    if (option == "--frame-size" && decoder != "fixed") return "fixed";
+    if ((option == "--delimiter" || option == "--include-delimiter" || option == "--no-include-delimiter") &&
+        decoder != "delimiter") {
+      return "delimiter";
+    }
+    if ((option == "--length-size" || option == "--length-endian" || option == "--length-includes-header") &&
+        decoder != "length-prefix") {
+      return "length-prefix";
+    }
+    return nullptr;
+  };
+
+  std::vector<std::string> warnings;
+  for (auto const& option : options.given_options) {
+    std::string message;
+    if (!mode_accepts(option)) {
+      message = option + " is ignored in " + mode + " mode";
+    } else if (decoder_ignores(option) != nullptr) {
+      message = option + " is ignored unless --decoder " + decoder_ignores(option);
+    }
+    if (!message.empty() &&
+        std::none_of(warnings.begin(), warnings.end(), [&](std::string const& w) { return w == message; })) {
+      warnings.push_back(std::move(message));
+    }
+  }
+  return warnings;
 }
 
 }  // namespace packet_probe::cli

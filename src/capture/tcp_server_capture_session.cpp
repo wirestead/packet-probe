@@ -151,6 +151,11 @@ void TcpServerCaptureSession::stop() {
 
 bool TcpServerCaptureSession::stopped() const { return stopped_.load(); }
 
+bool TcpServerCaptureSession::client_connected() const {
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  return impl_->active_client.has_value();
+}
+
 bool TcpServerCaptureSession::send(std::vector<std::uint8_t> payload) {
   wirestead::ClientId client_id;
   std::string client_info;

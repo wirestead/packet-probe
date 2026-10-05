@@ -32,6 +32,7 @@ class TcpServerCaptureSession : public CaptureSession {
   void start() override;
   void stop() override;
   bool stopped() const;
+  bool client_connected() const;
 
   bool send(std::vector<std::uint8_t> payload);
 
