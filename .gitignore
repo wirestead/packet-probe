@@ -30,4 +30,8 @@ dist/
 /.claude/skills/validate-change/
 /.codex/skills/prepare-commit/
 /.claude/skills/prepare-commit/
+/.agents/skills/investigate-bug/
+/.agents/skills/review-change/
+/.agents/skills/validate-change/
+/.agents/skills/prepare-commit/
 
