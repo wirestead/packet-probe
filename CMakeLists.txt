@@ -25,20 +25,47 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+option(PACKET_PROBE_FETCH_WIRESTEAD
+       "Download wirestead when no local source tree or installed package is found" ON)
+set(PACKET_PROBE_WIRESTEAD_GIT_TAG
+    "v0.10.0"
+    CACHE STRING "wirestead git ref downloaded by PACKET_PROBE_FETCH_WIRESTEAD"
+)
+
+# Used when wirestead is built as part of this project (local tree or download).
+set(WIRESTEAD_BUILD_TESTS
+    OFF
+    CACHE BOOL "" FORCE
+)
+# Link wirestead statically: packet-probe then runs without a wirestead DLL next
+# to it (Windows has no rpath), for both the shipped binary and the tests.
+set(WIRESTEAD_BUILD_SHARED
+    OFF
+    CACHE BOOL "" FORCE
+)
+
+# Order: a local source tree, then an installed package, then a download.
 if(EXISTS "${PACKET_PROBE_WIRESTEAD_SOURCE_DIR}/CMakeLists.txt")
-  set(WIRESTEAD_BUILD_TESTS
-      OFF
-      CACHE BOOL "" FORCE
-  )
-  # Link wirestead statically: packet-probe then runs without a wirestead DLL next
-  # to it (Windows has no rpath), for both the shipped binary and the tests.
-  set(WIRESTEAD_BUILD_SHARED
-      OFF
-      CACHE BOOL "" FORCE
-  )
   add_subdirectory("${PACKET_PROBE_WIRESTEAD_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wirestead")
 else()
-  find_package(wirestead CONFIG REQUIRED)
+  find_package(wirestead CONFIG QUIET)
+  if(NOT wirestead_FOUND)
+    if(NOT PACKET_PROBE_FETCH_WIRESTEAD)
+      message(FATAL_ERROR
+        "wirestead not found. Clone https://github.com/wirestead/wirestead next to this "
+        "repository, pass -DPACKET_PROBE_WIRESTEAD_SOURCE_DIR=<path>, install it, or "
+        "configure with -DPACKET_PROBE_FETCH_WIRESTEAD=ON to download it.")
+    endif()
+    message(STATUS "wirestead not found locally; downloading ${PACKET_PROBE_WIRESTEAD_GIT_TAG}")
+    include(FetchContent)
+    FetchContent_Declare(
+      wirestead
+      GIT_REPOSITORY https://github.com/wirestead/wirestead.git
+      GIT_TAG ${PACKET_PROBE_WIRESTEAD_GIT_TAG}
+      GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(wirestead)
+  endif()
 endif()
 
 add_library(

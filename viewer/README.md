@@ -18,18 +18,17 @@ not restart the engine process.
 
 The gateway needs `wirestead-python` (import name `wirestead`). It is published as
 wheels on the [wirestead-python releases](https://github.com/wirestead/wirestead-python/releases),
-not on PyPI:
+not on PyPI; `--find-links` lets pip pick the wheel for your Python and platform:
 
 ```sh
-gh release download v0.9.6 -R wirestead/wirestead-python -p "wirestead-0.9.6-cp312-cp312-*<platform>*.whl"
-python -m pip install wirestead-*.whl
-
-cd viewer
-python -m pip install -e .
+python -m pip install --only-binary wirestead \
+  --find-links https://github.com/wirestead/wirestead-python/releases/expanded_assets/v0.9.6 \
+  -e viewer
 ```
 
-`<platform>` is e.g. `manylinux_2_27_x86_64`, `win_amd64`, or `macosx_15_0_arm64`. For
-local development against a sibling `wirestead` checkout you can instead build it:
+Wheels exist for CPython 3.10-3.13 on Linux (x86_64, aarch64), macOS (arm64), and
+Windows (x64). For local development against a sibling `wirestead` checkout you can
+instead build it:
 
 ```sh
 python -m pip install -e ../wirestead-python \
@@ -69,10 +68,15 @@ always loopback-only.
 - **Left panel**: capture mode and its addresses, frame decoder, optional JSONL
   recording (written by the engine, on the engine's machine), Start/Stop, and Send
   (text with an optional line ending, or hex) with saved macros.
-- **Event table**: live events with direction/type/text filters and Pause. **Open
-  log…** loads a JSONL log recorded with `--log`; it is parsed in the browser and not
-  uploaded.
-- **Detail panel**: Hex, Text, and JSON views of the selected event.
+- **Event table**: live events with direction/type/text filters and Pause; the count
+  shows how many events match the filters, and **Δ** is the time since the previous
+  event. **Open log…** loads a JSONL log recorded with `--log`; it is parsed in the
+  browser and not uploaded. **Export…** downloads the events matching the filters as
+  JSONL (re-openable with Open log…) or CSV.
+- **Detail panel**: Hex, Text, and JSON views of the selected event; **Copy** copies
+  the shown view and **Use in Send** puts the payload into Send as hex.
+- **Keyboard**: `/` focuses the filter, `Esc` clears it, `↑`/`↓` move through events.
+- Start checks the form first (ports 1-65535, required fields) and marks bad fields.
 
 Form values and macros are remembered per browser.
 
@@ -82,13 +86,15 @@ UDP note: every datagram arriving at the bind address is recorded, from any send
 ## Test
 
 ```sh
-cd viewer
-python -m pip install -e ".[test]"
-python -m pytest
+python -m pip install --only-binary wirestead \
+  --find-links https://github.com/wirestead/wirestead-python/releases/expanded_assets/v0.9.6 \
+  -e "viewer[test]"
+cd viewer && python -m pytest
 ```
 
 ## Limitations
 
-- The browser keeps the most recent 5000 events; record large captures with JSONL.
+- The browser keeps the most recent 5000 events (and holds at most 5000 while
+  paused); record large captures with JSONL.
 - One engine per gateway; several browsers can watch and control it at once.
 - No replay, filter subscription, or snapshot requests yet.

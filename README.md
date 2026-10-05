@@ -39,9 +39,14 @@ written as JSONL for later viewer support.
 
 ## Build
 
-By default, CMake looks for a sibling wirestead source tree at `../wirestead`.
-If that path does not exist, it falls back to `find_package(wirestead CONFIG REQUIRED)`.
-Packet Probe requires a C++20-capable compiler.
+Packet Probe requires a C++20-capable compiler and Boost (Asio/System), e.g.
+`sudo apt-get install cmake g++ libboost-system-dev` or
+`vcpkg install boost-asio boost-system`.
+
+CMake finds wirestead in this order: a source tree at `../wirestead` (or
+`-DPACKET_PROBE_WIRESTEAD_SOURCE_DIR=<path>`), an installed `wirestead` package, and
+otherwise downloads it from GitHub (`-DPACKET_PROBE_WIRESTEAD_GIT_TAG=<ref>`, default
+`v0.10.0`; `-DPACKET_PROBE_FETCH_WIRESTEAD=OFF` disables the download).
 
 ```sh
 cmake -S . -B build
@@ -70,8 +75,9 @@ packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl
 
 Every received and sent byte event is printed as one hex line, for example
 `[12:00:00.123456] DEVICE -> APP 6 bytes  02 10 01 00 03 A7`. Use `--quiet` (`-q`)
-to only record to `--log`/`--ipc`. `packet-probe <mode> --help` lists every option
-of a mode.
+to only record to `--log`/`--ipc`, or `--ascii` to append each payload's printable
+text (`|AT+OK..|`). `packet-probe <mode> --help` lists every option of a mode; options
+the mode ignores (e.g. `--baudrate` with `udp`) are reported as warnings.
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
 recorded as TX events. Bytes received from the target are recorded as RX events.
@@ -119,10 +125,8 @@ communication session.
 
 TCP server mode currently accepts one client connection per process run.
 
-Send input is attempted only after the CLI reads stdin or `--send-file`.
-For `--send-file`, a remote client must already be connected when the file payload is sent.
-If you need to send a command after connection, use stdin-based `--send-text` or `--send-hex`,
-or start the client before sending the file.
+Send input (stdin lines or `--send-file`) is held until the first client connects,
+so the server can be started before the client.
 
 Example:
 
@@ -194,6 +198,9 @@ Windows example:
 ```sh
 packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl
 ```
+
+`packet-probe list-serial-ports` prints the ports found on this machine
+(`/dev/serial/by-id/*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/cu.*`, or `COMn`).
 
 Supported serial options:
 

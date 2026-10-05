@@ -9,9 +9,10 @@ authors = [
   { name = "Packet Probe contributors" }
 ]
 dependencies = [
-  # The gateway needs wirestead-python (import name `wirestead`). It is released as
-  # GitHub wheels, not on PyPI, so install it first (see README.md).
-  # "wirestead>=0.9.6",
+  # wirestead-python is released as GitHub wheels, not on PyPI: install with
+  #   python -m pip install --only-binary wirestead \
+  #     --find-links https://github.com/wirestead/wirestead-python/releases/expanded_assets/v0.9.6 -e .
+  "wirestead>=0.9.6",
 ]
 
 [project.optional-dependencies]

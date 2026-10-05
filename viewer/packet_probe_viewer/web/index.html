@@ -52,6 +52,7 @@
     padding: 6px 9px; min-height: 32px;
   }
   input:focus, select:focus { border-color: var(--accent); outline: none; }
+  input[aria-invalid=true] { border-color: var(--err); }
   input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
   button, .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -130,7 +131,9 @@
   th, td { padding: 5px 12px; white-space: nowrap; }
   td { border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
   td.num { text-align: right; color: var(--muted); }
-  td.time { color: var(--muted); }
+  td.time, td.delta { color: var(--muted); }
+  td.delta { text-align: right; }
+  .toolbar #export { width: auto; }
   td.summary, th:last-child { width: 100%; }
   td.summary { white-space: normal; font-family: inherit; font-size: 13px; }
   tbody tr { cursor: pointer; }
@@ -151,6 +154,7 @@
   .tabs button { min-height: 26px; padding: 3px 12px; border: 0; background: transparent; color: var(--muted); border-radius: 6px; }
   .tabs button.on { background: var(--surface-2); color: var(--accent); font-weight: 600; }
   #detail-title { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .tabs .tool { border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); }
   .pane { flex: 1; margin: 0; padding: 10px 14px; overflow: auto; font: 12px/1.6 var(--mono); white-space: pre; }
   #text.pane { white-space: pre-wrap; word-break: break-all; }
   .pane:empty::before { content: "Select an event to inspect its payload."; color: var(--faint); font-family: Inter, system-ui, sans-serif; }
@@ -230,7 +234,8 @@
 
   <main>
     <div class="toolbar">
-      <input id="filter" type="search" placeholder="Filter summary or hex…" aria-label="Filter">
+      <input id="filter" type="search" placeholder="Filter summary or hex…  ( / )" aria-label="Filter"
+             title="/ focuses the filter, Esc clears it, ↑/↓ move through events">
       <select id="dir-filter" hidden><option value="">All</option><option value="tx">TX</option><option value="rx">RX</option></select>
       <div class="pills" data-for="dir-filter"></div>
       <select id="type-filter" aria-label="Event type">
@@ -240,11 +245,14 @@
       <span id="count"></span>
       <button id="pause">Pause</button>
       <label class="btn"><input type="file" id="open-log" accept=".jsonl,.json,.log,text/plain" hidden>Open log…</label>
+      <select id="export" aria-label="Export events" title="Download the events that match the current filters">
+        <option value="">Export…</option><option value="jsonl">Shown events (JSONL)</option><option value="csv">Shown events (CSV)</option>
+      </select>
       <button id="clear">Clear</button>
     </div>
     <div id="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Time</th><th>Dir</th><th>Type</th><th>Size</th><th>Summary</th></tr></thead>
+        <thead><tr><th>#</th><th>Time</th><th title="Time since the previous event">Δ</th><th>Dir</th><th>Type</th><th>Size</th><th>Summary</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <div class="empty" id="empty"><strong>No events yet</strong>Start a capture on the left, or open a JSONL log.</div>
@@ -253,6 +261,8 @@
       <div class="tabs" role="tablist">
         <button data-tab="hex" class="on">Hex</button><button data-tab="text">Text</button><button data-tab="json">JSON</button>
         <span id="detail-title"></span>
+        <button class="tool" id="copy" disabled title="Copy the shown view">Copy</button>
+        <button class="tool" id="use-send" disabled title="Put this payload into Send as hex">Use in Send</button>
       </div>
       <pre id="hex" class="pane"></pre>
       <pre id="text" class="pane" hidden></pre>
@@ -290,7 +300,7 @@ const DECODER_FIELDS = {
   "raw": [],
   "fixed": [["frame_size", "Frame size (bytes)", "16", true]],
   "delimiter": [["delimiter_hex", "Delimiter (hex)", "0A", true], ["include_delimiter", "Keep delimiter in frame", true]],
-  "length-prefix": [["length_size", "Length bytes", "2"], ["length_endian", "Endian", "big"],
+  "length-prefix": [["length_size", "Length bytes", "2"], ["length_endian", "Endian", ["big", "little"]],
                     ["length_includes_header", "Length includes header", false]],
 };
 const NUMERIC = new Set(["bind_port", "target_port", "port", "listen_port", "baudrate", "frame_size", "length_size"]);
@@ -317,6 +327,17 @@ function renderFields(container, specs) {
       input.type = "checkbox";
       input.checked = saved[key] ?? def;
       wrap.append(input, label);
+    } else if (Array.isArray(def)) {
+      const select = document.createElement("select");
+      select.dataset.key = key;
+      select.append(...def.map((v) => Object.assign(document.createElement("option"), { value: v, textContent: v })));
+      select.value = def.includes(saved[key]) ? saved[key] : def[0];
+      select.addEventListener("change", remember);
+      wrap.className = wide ? "field wide" : "field";
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      wrap.append(caption, select);
+      return wrap;
     } else {
       wrap.className = wide ? "field wide" : "field";
       input.value = saved[key] ?? def;
@@ -327,6 +348,7 @@ function renderFields(container, specs) {
     }
     if (key === "serial_port") input.setAttribute("list", "serial-ports");
     input.addEventListener("change", remember);
+    input.addEventListener("input", () => input.removeAttribute("aria-invalid"));
     return wrap;
   }));
 }
@@ -428,8 +450,37 @@ function applyState(state, config) {
   renderMacros();
 }
 
+// Checks the form before it reaches the engine; returns "<label>: <problem>" for the first bad field.
+const PORT_KEYS = new Set(["bind_port", "port", "listen_port", "target_port"]);
+function validateForm() {
+  const mode = $("mode").value;
+  let problem = "";
+  for (const el of document.querySelectorAll("#fields [data-key], #decoder-fields [data-key]")) {
+    if (el.type === "checkbox" || el.tagName === "SELECT") continue;
+    const key = el.dataset.key;
+    const v = el.value.trim();
+    const optional = mode === "udp" && (key === "target_host" || key === "target_port");
+    let err = "";
+    if (!v) err = optional ? "" : "required";
+    else if (PORT_KEYS.has(key) && !(/^\d+$/.test(v) && +v >= 1 && +v <= 65535)) err = "must be a port, 1-65535";
+    else if (key === "length_size" && !["1", "2", "4"].includes(v)) err = "must be 1, 2, or 4";
+    else if (NUMERIC.has(key) && !(/^\d+$/.test(v) && +v >= 1)) err = "must be a positive number";
+    el.setAttribute("aria-invalid", err ? "true" : "false");
+    if (err && !problem) { problem = `${el.closest("label").querySelector("span").textContent}: ${err}`; el.focus(); }
+  }
+  if (!problem && mode === "udp") {
+    const host = document.querySelector('[data-key="target_host"]').value.trim();
+    const port = document.querySelector('[data-key="target_port"]').value.trim();
+    if (!!host !== !!port) problem = "Send-to target needs both a host and a port";
+  }
+  if (!problem && $("log-enabled").checked && !$("log-path").value.trim()) problem = "Log path: required";
+  return problem;
+}
+
 $("start").addEventListener("click", async () => {
   remember();
+  const problem = validateForm();
+  if (problem) { setMessage(problem, true); return; }
   const config = { mode: $("mode").value, ...readFields($("fields")),
                    decoder: { decoder: $("decoder").value, ...readFields($("decoder-fields")) },
                    log_path: $("log-enabled").checked ? $("log-path").value.trim() : "" };
@@ -487,7 +538,10 @@ function saveMacros() {
 const rows = $("rows");
 const tableWrap = $("table-wrap");
 const events = [];
+const rawLines = new WeakMap();  // event -> its original JSONL line, so export keeps full time_ns precision
 let selected = null;
+let shownCount = 0;
+let droppedWhilePaused = 0;
 
 function dirClass(d) { return d === "app_to_device" || d === "tx" ? "tx" : "rx"; }
 function dirLabel(d) { return dirClass(d) === "tx" ? "TX" : "RX"; }
@@ -496,6 +550,12 @@ function formatTime(ns) {
   const d = new Date(ns / 1e6);
   const micros = String(Math.floor((ns / 1e3) % 1e6)).padStart(6, "0");
   return d.toTimeString().slice(0, 8) + "." + micros;
+}
+function formatDelta(ns) {
+  if (!(ns > 0)) return "";  // derived frame/latency events share their source event's timestamp
+  if (ns < 1e6) return `+${(ns / 1e3).toFixed(0)} µs`;
+  if (ns < 1e9) return `+${(ns / 1e6).toFixed(3)} ms`;
+  return `+${(ns / 1e9).toFixed(3)} s`;
 }
 function matches(ev) {
   const dir = $("dir-filter").value;
@@ -507,8 +567,10 @@ function matches(ev) {
 }
 let errorCount = 0;
 function updateCount() {
-  $("count").textContent = `${events.length} events` + (errorCount ? ` · ${errorCount} errors` : "")
-    + (pending.length ? ` · ${pending.length} paused` : "");
+  const total = shownCount === events.length ? `${events.length} events` : `${shownCount} of ${events.length} events`;
+  $("count").textContent = total + (errorCount ? ` · ${errorCount} errors` : "")
+    + (pending.length ? ` · ${pending.length} paused` : "")
+    + (droppedWhilePaused ? ` · ${droppedWhilePaused} dropped while paused` : "");
   $("empty").hidden = events.length > 0 || pending.length > 0;
 }
 
@@ -518,19 +580,28 @@ function cell(text, className) {
   if (className) td.className = className;
   return td;
 }
-function addEvent(ev) {
+function addEvent(ev, raw) {
+  if (raw) rawLines.set(ev, raw);
   const tr = document.createElement("tr");
+  const prev = events[events.length - 1];
+  const delta = prev && ev.time_ns && prev.time_ns ? formatDelta(ev.time_ns - prev.time_ns) : "";
   const dir = cell("");
   dir.append(Object.assign(document.createElement("span"), { className: "badge " + dirClass(ev.direction), textContent: dirLabel(ev.direction) }));
-  tr.append(cell(ev.seq, "num"), cell(formatTime(ev.time_ns), "time"), dir, cell(ev.type, "type"),
+  tr.append(cell(ev.seq, "num"), cell(formatTime(ev.time_ns), "time"), cell(delta, "delta"), dir, cell(ev.type, "type"),
             cell(ev.size, "num"), cell(ev.summary, "summary"));
   if (ev.type === "error") { tr.classList.add("error"); errorCount++; }
   tr.hidden = !matches(ev);
+  if (!tr.hidden) shownCount++;
   tr._event = ev;
   const pinned = tableWrap.scrollTop + tableWrap.clientHeight >= tableWrap.scrollHeight - 4;
   rows.append(tr);
   events.push(ev);
-  if (events.length > MAX_ROWS) { events.shift(); rows.firstChild.remove(); }
+  if (events.length > MAX_ROWS) {
+    events.shift();
+    if (!rows.firstChild.hidden) shownCount--;
+    if (rows.firstChild === selected) { selected = null; showDetail(null); }
+    rows.firstChild.remove();
+  }
   if (pinned) tableWrap.scrollTop = tableWrap.scrollHeight;
 }
 
@@ -555,27 +626,109 @@ function showDetail(ev) {
   $("text").textContent = ev ? payloadText(ev.payload_hex || "") : "";
   $("json").textContent = ev ? JSON.stringify(ev, null, 2) : "";
   $("detail-title").textContent = ev ? `#${ev.seq} · ${dirLabel(ev.direction)} · ${ev.size ?? 0} bytes` : "";
+  $("copy").disabled = !ev;
+  $("use-send").disabled = !ev || !ev.payload_hex;
 }
-document.querySelectorAll(".tabs button").forEach((tab) => tab.addEventListener("click", () => {
-  document.querySelectorAll(".tabs button").forEach((t) => t.classList.toggle("on", t === tab));
+function activeTab() { return document.querySelector(".tabs button.on").dataset.tab; }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  // navigator.clipboard needs a secure context; plain-HTTP remote access falls back to execCommand.
+  const area = Object.assign(document.createElement("textarea"), { value: text });
+  document.body.append(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  return ok;
+}
+function spacedHex(hex) { return (hex.match(/../g) || []).join(" ").toUpperCase(); }
+$("copy").addEventListener("click", async () => {
+  const ev = selected?._event;
+  if (!ev) return;
+  const tab = activeTab();
+  const text = tab === "hex" ? spacedHex(ev.payload_hex || "") : $(tab).textContent;
+  setMessage(await copyText(text) ? `Copied ${tab}` : "Copy failed", false);
+});
+$("use-send").addEventListener("click", () => {
+  const ev = selected?._event;
+  if (!ev?.payload_hex) return;
+  $("send-format").value = "hex";
+  $("send-format").dispatchEvent(new Event("change"));
+  $("send-input").value = spacedHex(ev.payload_hex);
+  $("send-input").focus();
+});
+document.querySelectorAll(".tabs button[data-tab]").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button[data-tab]").forEach((t) => t.classList.toggle("on", t === tab));
   for (const id of ["hex", "text", "json"]) $(id).hidden = id !== tab.dataset.tab;
 }));
-rows.addEventListener("click", (e) => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
+function select(tr) {
   selected?.classList.remove("selected");
   selected = tr;
   tr.classList.add("selected");
+  tr.scrollIntoView({ block: "nearest" });
   showDetail(tr._event);
+}
+rows.addEventListener("click", (e) => {
+  const tr = e.target.closest("tr");
+  if (tr) select(tr);
 });
 
-const refilter = () => { for (const tr of rows.children) tr.hidden = !matches(tr._event); };
+// ---- keyboard: / filter, Esc clears it, ↑/↓ move through the shown events ----
+document.addEventListener("keydown", (e) => {
+  if (e.target === $("filter") && e.key === "Escape") {
+    $("filter").value = ""; refilter(); $("filter").blur(); return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest("input, select, textarea")) return;
+  if (e.key === "/") { e.preventDefault(); $("filter").focus(); return; }
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const step = e.key === "ArrowDown" ? "nextElementSibling" : "previousElementSibling";
+  let tr = selected && selected.isConnected ? selected[step] : (e.key === "ArrowDown" ? rows.firstElementChild : rows.lastElementChild);
+  while (tr && tr.hidden) tr = tr[step];
+  if (tr) { e.preventDefault(); select(tr); }
+});
+
+const refilter = () => {
+  shownCount = 0;
+  for (const tr of rows.children) { tr.hidden = !matches(tr._event); if (!tr.hidden) shownCount++; }
+  updateCount();
+};
 $("filter").addEventListener("input", refilter);
 $("dir-filter").addEventListener("change", refilter);
 $("type-filter").addEventListener("change", refilter);
 $("clear").addEventListener("click", () => {
   rows.replaceChildren(); events.length = 0; pending.length = 0; errorCount = 0; selected = null;
+  shownCount = 0; droppedWhilePaused = 0;
   showDetail(null); updateCount();
+});
+
+// ---- export: the events matching the current filters, as JSONL (re-openable) or CSV ----
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function csvField(v) {
+  const t = String(v ?? "");
+  return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+$("export").addEventListener("change", () => {
+  const format = $("export").value;
+  $("export").value = "";
+  const shown = [...rows.children].filter((tr) => !tr.hidden).map((tr) => tr._event);
+  if (!shown.length) { setMessage("No events to export", true); return; }
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  if (format === "jsonl") {
+    download(`packet-probe-${stamp}.jsonl`, shown.map((ev) => rawLines.get(ev) ?? JSON.stringify(ev)).join("\n") + "\n",
+             "application/x-ndjson");
+  } else if (format === "csv") {
+    const cols = ["seq", "time", "direction", "type", "size", "source", "destination", "summary", "payload_hex"];
+    const lines = [cols.join(",")].concat(shown.map((ev) => [ev.seq, formatTime(ev.time_ns), ev.direction, ev.type, ev.size,
+      ev.source, ev.destination, ev.summary, ev.payload_hex].map(csvField).join(",")));
+    download(`packet-probe-${stamp}.csv`, lines.join("\r\n") + "\r\n", "text/csv");
+  } else {
+    return;
+  }
+  setMessage(`Exported ${shown.length} events`);
 });
 
 // ---- pause: hold live events, flush on resume ----
@@ -585,7 +738,7 @@ $("pause").addEventListener("click", () => {
   paused = !paused;
   $("pause").textContent = paused ? "Resume" : "Pause";
   $("pause").classList.toggle("primary", paused);
-  if (!paused) { pending.splice(0).forEach(addEvent); }
+  if (!paused) { pending.splice(0).forEach(([ev, raw]) => addEvent(ev, raw)); }
   updateCount();
 });
 
@@ -600,7 +753,7 @@ $("open-log").addEventListener("change", async (e) => {
     if (!line.trim()) continue;
     try {
       const obj = JSON.parse(line);
-      if (obj && typeof obj === "object" && !Array.isArray(obj)) { if (obj.type !== "metadata") addEvent(obj); }
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) { if (obj.type !== "metadata") addEvent(obj, line); }
       else bad++;
     } catch { bad++; }
   }
@@ -628,7 +781,13 @@ stream.onmessage = (e) => {
   } else if (msg.type === "status") {
     applyState(msg.engine_state, msg.config);
   } else if (msg.type !== "metadata") {
-    if (paused) pending.push(msg); else addEvent(msg);
+    if (paused) {
+      // Bounded like the table: beyond MAX_ROWS the oldest held event is dropped.
+      if (pending.length >= MAX_ROWS) { pending.shift(); droppedWhilePaused++; }
+      pending.push([msg, e.data]);
+    } else {
+      addEvent(msg, e.data);
+    }
     updateCount();
   }
 };
@@ -638,6 +797,10 @@ stream.onerror = () => {
 };
 applyState("disconnected");
 updateCount();
+if (!token) {
+  $("empty").replaceChildren(Object.assign(document.createElement("strong"), { textContent: "Missing access token" }),
+    "Open the full URL printed by packet-probe-web; it ends with ?token=…. Open log… still works without it.");
+}
 </script>
 </body>
 </html>
