@@ -141,7 +141,10 @@ int main() {
     std::cerr << "[waiting] raw_bytes ping event" << std::endl;
     bool delivered = false;
     for (int attempt = 0; attempt < 20 && !delivered; ++attempt) {
-      sender.send(std::string_view("ping"));
+      auto const send_result = sender.send(std::string_view("ping"));
+      std::cerr << "[diag] attempt " << attempt << " send accepted=" << send_result.accepted();
+      if (!send_result.accepted()) std::cerr << " reason=" << static_cast<int>(send_result.reason());
+      std::cerr << std::endl;
       auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
       while (std::chrono::steady_clock::now() < deadline) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -154,6 +157,11 @@ int main() {
         if (delivered) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
+    }
+    if (!delivered) {
+      std::lock_guard<std::mutex> lock(mutex);
+      std::cerr << "[diag] " << messages.size() << " messages seen:" << std::endl;
+      for (auto const& msg : messages) std::cerr << "[diag]   " << msg.dump().substr(0, 300) << std::endl;
     }
     TEST_ASSERT(delivered, "raw_bytes ping event");
     std::cerr << "[found]   raw_bytes ping event" << std::endl;
