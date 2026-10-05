@@ -1,0 +1,18 @@
+# Runs the Packet Probe web viewer on a real Linux device host.
+# The page token is printed in `docker compose logs`. The gateway stays on
+# 127.0.0.1; reach it from another machine with `ssh -L 8080:127.0.0.1:8080 <host>`.
+services:
+  packet-probe:
+    build:
+      context: .
+      args:
+        WIRESTEAD_CORE_IMAGE: ${WIRESTEAD_CORE_IMAGE:-ghcr.io/wirestead/wirestead-core:v0.10.0}
+    image: packet-probe:local
+    network_mode: host
+    restart: unless-stopped
+    # /dev plus cgroup rules let serial devices be plugged in after start.
+    volumes:
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 188:* rmw" # ttyUSB*
+      - "c 166:* rmw" # ttyACM*
