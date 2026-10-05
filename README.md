@@ -270,6 +270,23 @@ packet-probe-web          # prints http://127.0.0.1:8080/?token=...
 
 See [viewer/README.md](viewer/README.md) for installation, security notes, and usage.
 
+## Docker
+
+The `Dockerfile` builds the engine and the viewer on the
+`ghcr.io/wirestead/wirestead-core` image (wirestead-container) and installs
+wirestead-python against the same core. `compose.yaml` runs it on a Linux device
+host with host networking and hot-pluggable serial devices:
+
+```sh
+docker compose up -d --build
+docker compose logs packet-probe   # prints http://127.0.0.1:8080/?token=...
+```
+
+The gateway stays on `127.0.0.1`; reach it from another machine with
+`ssh -L 8080:127.0.0.1:8080 <host>`. Use `WIRESTEAD_CORE_IMAGE=<image>` to build on a
+different core image. On Docker Desktop (including WSL2), host networking is the
+Desktop VM's, so the page is not reachable from the host there.
+
 ## Documentation
 
 - [Capture Modes](docs/capture-modes.md)
