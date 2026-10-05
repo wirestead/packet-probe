@@ -144,11 +144,14 @@ int main() {
       sender.send(std::string_view("ping"));
       auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
       while (std::chrono::steady_clock::now() < deadline) {
-        std::lock_guard<std::mutex> lock(mutex);
-        for (auto const& msg : messages) {
-          if (msg.value("type", "") == "raw_bytes" && msg.value("payload_hex", "") == "70696E67") {
-            delivered = true;
-            break;
+        {
+          // Sleep with the lock released, or on_message() can starve waiting for it.
+          std::lock_guard<std::mutex> lock(mutex);
+          for (auto const& msg : messages) {
+            if (msg.value("type", "") == "raw_bytes" && msg.value("payload_hex", "") == "70696E67") {
+              delivered = true;
+              break;
+            }
           }
         }
         if (delivered) break;
